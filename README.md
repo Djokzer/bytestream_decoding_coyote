@@ -14,8 +14,8 @@ lspci | grep 21:
 
 ## Rescan PCIe devices : 
 ```bash
+sudo sh -c "echo 1 > /sys/bus/pci/devices/0000:21:00.0/remove "
 sudo sh -c "echo 1 > /sys/bus/pci/rescan "
-sudo sh -c "echo 1 > /sys/bus/pci/devices/0000:21:00.0/rescan "
 ```
 
 ## Load coyote driver : 
@@ -37,7 +37,7 @@ insmod: ERROR: could not insert module coyote_driver.ko: Invalid module format
 I tried to recompile the driver and it seems to have fixed the issue.
 
 
-## Test program not working
+## Test program not working - FIXED
 
 When trying to run the test program, I get the following error :
 ```bash
@@ -56,4 +56,11 @@ Ending transfer size: 4194304
 terminate called after throwing an instance of 'std::runtime_error'
   what():  ERROR: cThread instance could not be obtained, vfid: 0
 Aborted (core dumped)
+```
+
+Driver not correctly loaded.
+After programming the fpga need to do a correct rescan of the PCIe devices. For this we need to force a remove of the device and then rescan the PCIe bus. The following commands should be used :
+```bash
+sudo sh -c "echo 1 > /sys/bus/pci/devices/0000:21:00.0/remove "
+sudo sh -c "echo 1 > /sys/bus/pci/rescan "
 ```
