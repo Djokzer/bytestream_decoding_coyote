@@ -37,7 +37,7 @@ insmod: ERROR: could not insert module coyote_driver.ko: Invalid module format
 I tried to recompile the driver and it seems to have fixed the issue.
 
 
-## Test program not working - FIXED
+## Test program crashing - FIXED
 
 When trying to run the test program, I get the following error :
 ```bash
@@ -63,4 +63,13 @@ After programming the fpga need to do a correct rescan of the PCIe devices. For 
 ```bash
 sudo sh -c "echo 1 > /sys/bus/pci/devices/0000:21:00.0/remove "
 sudo sh -c "echo 1 > /sys/bus/pci/rescan "
+```
+
+## Test program blocking - FIXED
+
+When trying to run the test program, It gets stucked during the transfers.
+
+It was fixed by enabling the IOMMU in the grub boot args :
+```bash
+GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=2M hugepagesz=2M hugepages=2048 amd_iommu=on iommu=pt"
 ```
