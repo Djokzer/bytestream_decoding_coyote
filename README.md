@@ -24,6 +24,15 @@ cd /home/abi/Coyote/driver/build/
 sudo insmod coyote_driver.ko
 ```
 
+# Build steps for V80 :
+
+```bash
+cd Coyote/examples/01_hello_world/hw
+mkdir build_hw && cd build_hw                
+cmake ../ -DFDEV_NAME=v80 -DBUILD_STATIC=1 -DBUILD_SHELL=0
+make project && make bitgen
+```
+
 # Encountered issues :
 
 ## Invalid module format error - FIXED
