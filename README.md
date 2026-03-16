@@ -1,9 +1,12 @@
 # General steps to run Coyote
 
-## Launch Vivado hardware server : 
+## Launch Vivado from server : 
 ```bash
+ssh abi@dpnc-tdaq-fpgadev02 -X
+source /tools/Xilinx/Vivado/2024.2/settings64.sh
 cd /tools/Xilinx/Vivado/2024.2/bin/
 ./hw_server -d -stcp::3121
+vivado
 ```
 
 ## Check PCIe devices : 
@@ -26,11 +29,18 @@ sudo insmod coyote_driver.ko
 
 # Build steps for V80 :
 
+## Hardware build :
 ```bash
 cd Coyote/examples/01_hello_world/hw
 mkdir build_hw && cd build_hw                
 cmake ../ -DFDEV_NAME=v80 -DBUILD_STATIC=1 -DBUILD_SHELL=0
 make project && make bitgen
+```
+
+## Driver build :
+```bash
+cd Coyote/driver
+make TARGET_PLATFORM=versal
 ```
 
 # Encountered issues :
