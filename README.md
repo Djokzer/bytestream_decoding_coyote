@@ -92,3 +92,25 @@ It was fixed by enabling the IOMMU in the grub boot args :
 ```bash
 GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=2M hugepagesz=2M hugepages=2048 amd_iommu=on iommu=pt"
 ```
+
+## Driver loading error with V80 - FIXED
+
+When trying to load the driver, I get an error with MSI-X.
+
+There is a pci=realloc option : 
+```bash
+pci=
+  realloc=        Enable/disable reallocating PCI bridge resources
+                  if allocations done by BIOS are too small to
+                  accommodate resources required by all child
+                  devices.
+                  off: Turn realloc off
+                  on: Turn realloc on
+```
+
+Tried to change grub default : 
+```bash
+GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=2M hugepagesz=2M hugepages=2048 pci=realloc=on amd_iommu=off"
+```
+
+And now it works !!
