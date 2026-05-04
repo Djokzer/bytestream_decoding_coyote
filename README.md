@@ -114,3 +114,17 @@ GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=2M hugepagesz=2M hugepages=2048 p
 ```
 
 And now it works !!
+
+# Tests :
+
+## ILA TESTS
+
+### ILA test with U55C - Example 01_hello_world - When not working
+
+There is a case with the u55c, where when loading the bitstream and the driver it seems to work. But when trying to run the test program, it gets stucked during the transfers.
+I tried to check with the ILA and it seems that the transfers are not starting. The ILA is configured to trigger on the receiver valid signal, and it seems that the signal is never going high.
+
+### ILA test with V80 - bytestream_decoding
+
+I've checked the valid signal of the output, and it seems to be at 1 most of the time, there is random moment where it will be at 0 for a clock cycle.
+So it seems that the transfer is good, the logic isn't waiting on the host input data.
