@@ -270,3 +270,18 @@ First cells with non-zero time:
 37594 Gain_and_ID = 0x21919 Energy = 300.213 Time = -1.62 Quality_and_Provenence = 0
 37596 Gain_and_ID = 0x21b19 Energy = 978.284 Time = 2.19 Quality_and_Provenence = 0
 ```
+
+### ILA - Valid, Ready duty cycle :
+```bash
+Total samples: 512  (post-trigger, starting at sample 512)
+
+Signal                High cycles    Ratio
+------------------------------------------
+  [axis_host_recv[0]]
+    tvalid                    505  98.633%
+    tready                    461  90.039%
+
+  [axis_host_send[0]]
+    tvalid                    509  99.414%
+    tready                    512 100.000%
+```
