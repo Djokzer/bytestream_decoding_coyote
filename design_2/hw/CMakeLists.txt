@@ -28,7 +28,11 @@
 # Coyote has its own internal build system, which must be sourced when synthesizing bitstreams
 # This can be done using find_package(CoyoteHW REQUIRED)
 cmake_minimum_required(VERSION 3.5)
-set(CYT_DIR /home/abi/Coyote)
+if(DEFINED ENV{COYOTE_DIR})
+    set(CYT_DIR $ENV{COYOTE_DIR})
+else()
+    message(FATAL_ERROR "COYOTE_DIR is not set. Source env.sh before running cmake.")
+endif()
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CYT_DIR}/cmake)
 find_package(CoyoteHW REQUIRED)
 

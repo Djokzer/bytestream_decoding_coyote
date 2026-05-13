@@ -39,7 +39,10 @@ option(EN_SIM "Enable simulation mode for Coyote" OFF)
 if(EN_SIM)
     add_subdirectory(../../../sim/sw ${CMAKE_BINARY_DIR}/coyote)
 else()
-    add_subdirectory(/home/abi/Coyote/sw ${CMAKE_BINARY_DIR}/coyote)
+    if(NOT DEFINED ENV{COYOTE_DIR})
+        message(FATAL_ERROR "COYOTE_DIR is not set. Source env.sh before running cmake.")
+    endif()
+    add_subdirectory($ENV{COYOTE_DIR}/sw ${CMAKE_BINARY_DIR}/coyote)
 endif()
 
 # Directory containing the executable(s) to be compiled
