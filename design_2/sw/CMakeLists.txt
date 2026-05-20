@@ -28,7 +28,7 @@
 # Coyote has its own internal build system, which must be sourced when compiling software
 # This can be done using find_package(CoyoteSW REQUIRED)
 cmake_minimum_required(VERSION 3.5)
-project(example_01_hello_world)
+project(design_2)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)

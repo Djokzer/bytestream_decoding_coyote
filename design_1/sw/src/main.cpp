@@ -41,7 +41,8 @@ static int compute_output_size(const std::vector<uint32_t>& raw) {
 
 // Write each 32-bit word into bytes [0:3] of its 64-byte slot; upper bytes are zeroed
 static void pack_words_to_512(const std::vector<uint32_t>& words, uint8_t* buf) {
-    for (size_t i = 0; i < words.size(); i++) {
+    for (size_t i = 0; i < words.size(); i++) 
+    {
         memset(buf + i * STREAM_WIDTH_BYTES, 0, STREAM_WIDTH_BYTES);
         memcpy(buf + i * STREAM_WIDTH_BYTES, &words[i], sizeof(uint32_t));
     }
@@ -53,7 +54,7 @@ void stream_correction_values(coyote::cThread& c_thread, uint8_t* corr_buf, uint
     coyote::localSg corr_sg  = { .addr = corr_buf, .len = corr_buf_bytes, .stream = true, .dest = 1 };
 
     c_thread.invoke(coyote::CoyoteOper::LOCAL_READ, corr_sg);
-    while (c_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
+    while (c_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {};
     c_thread.clearCompleted();
     //std::cout << "Correction values sent to axis_host_recv[1]." << std::endl;
 
@@ -61,6 +62,8 @@ void stream_correction_values(coyote::cThread& c_thread, uint8_t* corr_buf, uint
 
 
 int main(int argc, char* argv[]) {
+
+    // ---------- Input Args ----------
     namespace po = boost::program_options;
 
     std::string raw_file, correction_file;
@@ -71,18 +74,29 @@ int main(int argc, char* argv[]) {
         ("correction,c",  po::value<std::string>(&correction_file)->required(), "Correction values binary file");
 
     po::variables_map vm;
-    try {
+    try 
+    {
         po::store(po::parse_command_line(argc, argv, opts), vm);
-        if (vm.count("help")) { std::cout << opts << std::endl; return EXIT_SUCCESS; }
+        if (vm.count("help")) 
+        { 
+            std::cout << opts << std::endl; 
+            return EXIT_SUCCESS; 
+        }
         po::notify(vm);
-    } catch (const std::exception& e) {
+    } catch (const std::exception& e) 
+    {
         std::cerr << "Argument error: " << e.what() << "\n" << opts << std::endl;
         return EXIT_FAILURE;
     }
+    // -----------------------------------
 
-    // --- Load raw data ---
+    // ---------- Load raw data ----------
     std::ifstream fin_raw(raw_file, std::ios::binary);
-    if (!fin_raw) { std::cerr << "Cannot open raw file: " << raw_file << std::endl; return EXIT_FAILURE; }
+    if (!fin_raw) 
+    { 
+        std::cerr << "Cannot open raw file: " << raw_file << std::endl; 
+        return EXIT_FAILURE; 
+    }
     std::vector<uint32_t> raw_words;
     {
         uint32_t w;
@@ -90,10 +104,15 @@ int main(int argc, char* argv[]) {
             raw_words.push_back(w);
     }
     std::cout << "Raw words loaded: " << raw_words.size() << std::endl;
+    // -----------------------------------
 
-    // --- Load correction data ---
+    // ------- Load correction data ------
     std::ifstream fin_corr(correction_file, std::ios::binary);
-    if (!fin_corr) { std::cerr << "Cannot open correction file: " << correction_file << std::endl; return EXIT_FAILURE; }
+    if (!fin_corr) 
+    { 
+        std::cerr << "Cannot open correction file: " << correction_file << std::endl; 
+        return EXIT_FAILURE; 
+    }
     std::vector<uint32_t> corr_words;
     {
         uint32_t w;
@@ -103,16 +122,15 @@ int main(int argc, char* argv[]) {
     if ((int)corr_words.size() != CORRECTION_DATA_SIZE)
         std::cerr << "Warning: correction file has " << corr_words.size()
                   << " words, expected " << CORRECTION_DATA_SIZE << std::endl;
+    // -----------------------------------
 
-    // --- Compute expected output size (same FEB-counting logic as XRT host) ---
     const int output_cells = compute_output_size(raw_words);
-    // Hardware produces 4 sequential 32-bit beats per CaloCell (gain_id, energy, time, q_and_p)
     const int output_words = output_cells * 4;
     std::cout << "Expected output cells: " << output_cells
               << "  (" << output_words << " 32-bit words)" << std::endl;
 
-    // --- Allocate Coyote huge-page buffers ---
-    // Each 32-bit word occupies one 512-bit (64-byte) AXI-Stream beat
+    
+    // ----------- Setup buffers ----------
     const size_t raw_buf_bytes  = raw_words.size()  * STREAM_WIDTH_BYTES;
     const size_t corr_buf_bytes = corr_words.size() * STREAM_WIDTH_BYTES;
     const size_t out_buf_bytes  = output_words       * STREAM_WIDTH_BYTES;
@@ -129,35 +147,40 @@ int main(int argc, char* argv[]) {
     pack_words_to_512(raw_words,  raw_buf);
     pack_words_to_512(corr_words, corr_buf);
     memset(out_buf, 0, out_buf_bytes);
+    // -----------------------------------
 
-    // STREAM CORRECTION VALUES
+
+    // --- Stream corrections to VFPGA ---
     auto t_corr_start = std::chrono::high_resolution_clock::now();
     stream_correction_values(coyote_thread, corr_buf, (uint32_t)corr_buf_bytes);
     std::cout << "Correction stream time: "
               << std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t_corr_start).count()
               << " ms" << std::endl;
+    // -----------------------------------
 
-    // Launch parallel coyote threads for raw write and result get
+    // ----- Stream raw & get results ----
     coyote::localSg raw_sg = { .addr = raw_buf, .len = (uint32_t)raw_buf_bytes, .stream = true, .dest = 0 };
     coyote::localSg out_sg = { .addr = out_buf, .len = (uint32_t)out_buf_bytes, .stream = true };
 
     auto t0 = std::chrono::high_resolution_clock::now();
     coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, raw_sg);
     coyote_thread.invoke(coyote::CoyoteOper::LOCAL_WRITE, out_sg);
-    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
-    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_WRITE) != 1) {}
+    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {};
+    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_WRITE) != 1) {};
     coyote_thread.clearCompleted();
     coyote_thread.clearCompleted();
     auto transfer_time = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0).count();
 
     std::cout << "Transfer time:  " << transfer_time << " ms" << std::endl;
+    // -----------------------------------
 
     // -------------------------------------------------------------------
     // Unpack output: each 512-bit beat holds one 32-bit word in [31:0]
     // The decoder emits 4 words per cell: gain_id, energy, time, q_and_p
     // -------------------------------------------------------------------
     std::vector<CaloCell> results(output_cells);
-    for (int i = 0; i < output_cells; i++) {
+    for (int i = 0; i < output_cells; i++) 
+    {
         memcpy(&results[i].gain_and_online_ID, out_buf + (i * 4 + 0) * STREAM_WIDTH_BYTES, sizeof(int));
         memcpy(&results[i].energy,             out_buf + (i * 4 + 1) * STREAM_WIDTH_BYTES, sizeof(float));
         memcpy(&results[i].time,               out_buf + (i * 4 + 2) * STREAM_WIDTH_BYTES, sizeof(float));
@@ -165,7 +188,8 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "\nFirst decoded cells:" << std::endl;
-    for (int i = 0; i < std::min(20, output_cells); i++) {
+    for (int i = 0; i < std::min(20, output_cells); i++) 
+    {
         std::cout << i
             << " Gain_and_ID = 0x" << std::hex << results[i].gain_and_online_ID
             << " Energy = "        << results[i].energy
@@ -176,8 +200,10 @@ int main(int argc, char* argv[]) {
 
     std::cout << "\nFirst cells with non-zero time:" << std::endl;
     int shown = 0;
-    for (int i = 0; i < output_cells && shown < 2; i++) {
-        if (results[i].time != 0.0f) {
+    for (int i = 0; i < output_cells && shown < 2; i++) 
+    {
+        if (results[i].time != 0.0f) 
+        {
             std::cout << i
                 << " Gain_and_ID = 0x" << std::hex << results[i].gain_and_online_ID
                 << " Energy = "        << results[i].energy

@@ -11,8 +11,9 @@ bytestream_decoding_coyote/
 │   ├── hw/                # VHDL logic + SystemVerilog top, CMakeLists.txt
 │   └── sw/                # Host code, CMakeLists.txt
 ├── design_2/              # 128-bit output variant, 400 MHz clock
-│   ├── hw/                # CMakeLists.txt
-│   └── sw/                # CMakeLists.txt
+│   ├── assets/            # ILA measurement files (.csv, .vcd, .ila)
+│   ├── hw/                # VHDL logic + SystemVerilog top, CMakeLists.txt
+│   └── sw/                # Host code, CMakeLists.txt
 ├── docs/
 │   └── notes.md           # Build steps, encountered issues, and ILA results
 ├── scripts/
@@ -74,6 +75,46 @@ make
 cd $COYOTE_DIR/driver
 make TARGET_PLATFORM=versal
 ```
+
+## ILA Setup
+
+The ILA is configured in two places:
+
+**1. IP configuration — `design_1/hw/src/init_ip.tcl`**
+
+Create the ILA IP and set the number of probes and their widths:
+
+```tcl
+# On UltraScale+: ila / on Versal: axis_ila
+create_ip -name axis_ila -vendor xilinx.com -library ip -module_name ila_bsd
+set_property -dict [list \
+    CONFIG.C_NUM_OF_PROBES {8} \
+    CONFIG.C_PROBE3_WIDTH  {512} \
+    CONFIG.C_PROBE7_WIDTH  {512} \
+] [get_ips ila_bsd]
+```
+
+Only declare probes whose width differs from the default (1 bit). Probes are numbered from `0` to `C_NUM_OF_PROBES - 1`.
+
+**2. Probe connections — `design_1/hw/src/vfpga_top.svh`**
+
+Instantiate the generated module and connect each probe to the signal to observe:
+
+```systemverilog
+ila_bsd ila_bsd_inst (
+    .clk(aclk),
+    .probe0(axis_host_recv[0].tvalid),  // 1 bit
+    .probe1(axis_host_recv[0].tready),  // 1 bit
+    .probe2(axis_host_recv[0].tlast),   // 1 bit
+    .probe3(axis_host_recv[0].tdata),   // 512 bits
+    .probe4(axis_host_send[0].tvalid),  // 1 bit
+    .probe5(axis_host_send[0].tready),  // 1 bit
+    .probe6(axis_host_send[0].tlast),   // 1 bit
+    .probe7(axis_host_send[0].tdata)    // 512 bits
+);
+```
+
+After programming the bitstream, open the hardware manager in Vivado, connect to the board, and the ILA will be usable.
 
 ## Setup and Test instructions
 
