@@ -1,7 +1,75 @@
-@article{reference,
-  title   = {{Some Article}},
-  year    = {2025},
-  journal = {Some Journal},
-  author  = {Some Authors},
-  url     = {typst.app}
+% =============================================================================
+% Références suggérées pour le chapitre "Contexte technique".
+% À vérifier / compléter manuellement (URLs, années, numéros de page).
+% =============================================================================
+
+% --- Coyote (papier de référence ETHZ) ---------------------------------------
+% Référence principale : Korolija et al., "Do OS abstractions make sense on FPGAs?",
+% OSDI 2020. Voir aussi le dépôt GitHub fpgasystems/Coyote pour la doc à jour.
+@inproceedings{coyote,
+  title     = {Do {OS} Abstractions Make Sense on {FPGAs}?},
+  author    = {Korolija, Dario and Roscoe, Timothy and Alonso, Gustavo},
+  booktitle = {14th {USENIX} Symposium on Operating Systems Design and Implementation ({OSDI})},
+  year      = {2020},
+  publisher = {USENIX Association},
+  url       = {https://www.usenix.org/conference/osdi20/presentation/roscoe}
+}
+
+% --- XRT (Xilinx Runtime) ----------------------------------------------------
+@misc{xrt,
+  title        = {{XRT}: {Xilinx} Runtime Library Documentation},
+  author       = {{AMD/Xilinx}},
+  year         = {2024},
+  howpublished = {\url{https://xilinx.github.io/XRT/}},
+  note         = {Consulté en 2025}
+}
+
+% --- Alveo U55C --------------------------------------------------------------
+@misc{alveo-u55c,
+  title        = {{Alveo U55C} High Performance Compute Card -- Product Brief},
+  author       = {{AMD/Xilinx}},
+  year         = {2022},
+  howpublished = {\url{https://www.xilinx.com/products/boards-and-kits/alveo/u55c.html}}
+}
+
+% --- Versal Premium V80 ------------------------------------------------------
+@misc{versal-v80,
+  title        = {{AMD Alveo V80} Compute Accelerator Card -- Product Brief},
+  author       = {{AMD}},
+  year         = {2024},
+  howpublished = {\url{https://www.amd.com/en/products/accelerators/alveo/v80.html}}
+}
+
+% --- smartNIC (référence générique sur le rôle des FPGAs dans le dataplane) --
+% Suggestion : papier Microsoft Catapult ou AccelNet selon ce que tu veux citer.
+% Catapult (Putnam et al., ISCA 2014) ou AccelNet (Firestone et al., NSDI 2018).
+@inproceedings{smartnic,
+  title     = {{Azure Accelerated Networking}: {SmartNICs} in the Public Cloud},
+  author    = {Firestone, Daniel and others},
+  booktitle = {15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI})},
+  year      = {2018},
+  publisher = {USENIX Association}
+}
+
+% --- ATLAS LAr calorimeter readout -------------------------------------------
+% Référence générique pour le contexte ATLAS / LAr. À remplacer par la note
+% technique CERN ou le papier précis dont est issu le décodeur.
+@article{atlas-lar,
+  title   = {The {ATLAS} Liquid Argon Calorimeter: Construction, Integration, Commissioning and Performance},
+  author  = {{ATLAS LAr Collaboration}},
+  journal = {Journal of Instrumentation},
+  year    = {2010},
+  volume  = {5},
+  pages   = {P09003}
+}
+
+% --- Design VHDL d'origine (Upegui) ------------------------------------------
+% À remplacer par le rapport interne, le dépôt GitLab ou la publication
+% correspondante. Placeholder pour l'instant.
+@misc{upegui-bsd,
+  title        = {{Bytestream Decoder} -- design {VHDL} pour {ATLAS LAr} sur {Alveo U55C}},
+  author       = {Upegui Posada, Andres},
+  year         = {2024},
+  howpublished = {Document interne, HEPIA / inIT},
+  note         = {Référence à compléter}
 }

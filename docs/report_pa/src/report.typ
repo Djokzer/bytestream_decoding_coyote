@@ -54,57 +54,119 @@ Le travail du portage coté design est la réecriture du Wrapper, et le fait que
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-= Background
+= Contexte technique
 // ─────────────────────────────────────────────────────────────────────────────
 
 == Accélération matérielle par FPGA pour le traitement de flux
 
-// Expliquer pourquoi les FPGAs sont bien adaptés au traitement de flux de
-// données en temps réel (parallélisme, latence déterministe, débit élevé).
-// Élargir au contexte smartNIC / dataplane : FPGAs dans les cartes réseau
-// intelligentes, traitement in-line des paquets, déchargement (offload) CPU.
-// Présenter les cartes utilisées :
-//   - Alveo U55C : HBM, PCIe 4.0, support XRT et Coyote
-//   - Xilinx V80 (Versal Premium) : PCIe 5.0, AI Engine, NoC ; support XRT absent,
-//     Coyote récemment ajouté → cas de test pertinent pour évaluer Coyote
-#lorem(60)
+Les FPGAs occupent une position singulière dans le paysage de l'accélération matérielle. Contrairement aux CPUs et aux GPUs, 
+dont l'architecture est figée et le parallélisme borné par le nombre de cœurs ou de threads, un FPGA permet de décrire une architecture sur mesure, dans laquelle chaque étage de traitement s'exécute en parallèle des autres. 
+Cette propriété rend les FPGAs particulièrement adaptés au traitement de flux de données en continu.
+
+Deux cartes ont été utilisées dans le cadre de ce projet. 
+La première, l'Alveo U55C, est une carte d'accélération basée sur un FPGA UltraScale+ avec 16 GB de HBM2 et une interface PCIe Gen4 x8 ; 
+elle est aujourd'hui bien supportée par les frameworks existants @alveo-u55c. 
+La seconde, la V80, est plus récente : 
+elle repose sur l'architecture Versal (NoC matériel intégré, AI Engines optionnels), expose une interface PCIe Gen5 x8 et embarque également de la HBM @versal-v80. 
+Au démarrage du projet, le support de la V80 par les frameworks logiciels existants était quasi inexistant, ce qui en faisait précisément une plateforme intéressante à évaluer.
+
+
+#let img1 = figure(
+  image("imgs/xilinx_u55c.png", width: 80%),
+  caption: [
+    Xilinx Alveo U55C, une carte d'accélération basée sur un FPGA UltraScale+.
+  ],
+)
+
+#let img2 = figure(
+  image("imgs/xilinx_v80.png", width: 96%),
+  caption: [
+    Xilinx Versal V80, une carte d'accélération basée sur un FPGA Versal.
+  ],
+)
+
+#grid(columns: 2, inset: 0.5em, stroke: none,
+  img1,
+  img2,
+)
 
 == Frameworks de développement hôte-FPGA : XRT et Coyote
 
-// Présenter XRT (Xilinx Runtime) :
-//   - modèle de programmation (kernels Vitis HLS/RTL, xclbin, buffers)
-//   - avantages : écosystème mature, toolchain intégrée (Vitis)
-//   - limites : pas de support V80, modèle centré sur offload batch,
-//     moins adapté aux flux continus ou aux cas smartNIC
-// Présenter Coyote :
-//   - architecture shell/role : séparation stricte infrastructure/logique appli
-//   - interface AXI-Stream 512 bits (ou plus) vers le rôle utilisateur
-//   - gestion PCIe transparente, hugepages, driver kernel chargeable
-//   - support multi-tenant, RDMA optionnel, extensible
-// Comparaison synthétique XRT vs Coyote :
-//   - tableau ou liste (modèle de prog, support matériel, flexibilité, maturité)
-//   - souligner que Coyote cible explicitement les cas dataplane / smartNIC
-#lorem(80)
+Exploiter un FPGA depuis un programme hôte suppose une pile logicielle qui prend
+en charge le transfert PCIe, la gestion mémoire, l'orchestration des kernels et
+la synchronisation. Deux frameworks sont ici comparés.
 
-== Le Bytestream Decoder comme algorithme de référence
+*XRT* (_Xilinx Runtime_) est la pile officielle d'AMD/Xilinx pour les cartes
+Alveo @xrt. Le modèle de programmation repose sur des _kernels_ — généralement
+décrits en Vitis HLS, parfois en RTL — empaquetés dans un binaire `.xclbin`
+chargé par l'hôte. Les données transitent via des _buffers_ explicitement
+alloués, et l'API C++ (OpenCL ou XRT native) suit un schéma _offload batch_ :
+copie hôte→FPGA, exécution, copie FPGA→hôte. XRT bénéficie d'un écosystème
+mature, étroitement intégré à la _toolchain_ Vitis, mais présente deux limites
+pour le présent projet : il ne supporte pas la Versal V80, et son modèle batch
+s'adapte assez mal aux pipelines de flux continus typiques des cas d'usage
+_dataplane_.
 
-// Donner uniquement le contexte nécessaire à la compréhension de l'algorithme :
-//   - origine : projet ATLAS/CERN, calorimètre LAr, cartes FEB émettant un
-//     bytestream compressé par collision (une phrase suffit sur la physique)
-//   - ce qui importe pour nous : c'est un pipeline de traitement de flux avec
-//     deux entrées (données brutes + corrections), plusieurs étages (parsing,
-//     décodage, LUT, correction FPU, fusion), une sortie structurée par cellule
-//   - il est représentatif d'une large classe d'algorithmes dataplane :
-//     décompression/parsing à la volée, tables de correspondance, arithmétique
-//     flottante, flux multi-canaux
-//   - il existait déjà sous forme VHDL validée (design Upegui) et fonctionnait
-//     sous XRT → point de comparaison idéal
-// Décrire brièvement l'architecture du pipeline VHDL :
-//   - FEB Parser → Gain/Energy/Time Decoder → CAM+LUT hash → Correction FPU →
-//     Output Merger → FIFO
-//   - bus interne 32 bits, deux flux AXI-Stream en entrée
-//   - sortie : 4 mots de 32 bits par cellule (Gain+ID, Energy, Time, Quality)
-#lorem(80)
+*Coyote* est un framework open source développé à l'ETH Zürich qui adopte une
+approche radicalement différente @coyote. L'idée centrale est une séparation
+stricte _shell/role_ : le _shell_ regroupe toute l'infrastructure générique
+(contrôleur PCIe, DMA, gestion mémoire, interruptions, hugepages, support
+multi-locataire et RDMA optionnel) et est livré pré-implémenté ; le _role_
+correspond à la logique applicative écrite par l'utilisateur, qui dialogue avec
+le shell via une ou plusieurs interfaces AXI-Stream de 512 bits. Le driver
+noyau associé est générique et rechargeable sans reflasher le FPGA. Cette
+architecture cible explicitement les déploiements _dataplane_ et _smartNIC_, et
+le support de cartes récentes — notamment la V80 — y est ajouté plus rapidement
+que dans XRT. En contrepartie, la documentation est plus parcellaire et la
+maturité de l'outil reste inférieure à celle de XRT.
+
+Le tableau @tab-xrt-coyote synthétise les principales différences.
+
+#figure(
+  table(
+    columns: (auto, auto, auto),
+    align: (left, left, left),
+    table.header([], [*XRT*], [*Coyote*]),
+    [Modèle], [Offload batch], [Pipeline shell/role],
+    [Interface vers le _role_], [Buffers + kernels], [AXI-Stream 512 bits],
+    [Support V80], [Non], [Oui],
+    [Toolchain requise], [Vitis], [Vivado seul],
+    [Maturité], [Élevée], [En cours],
+    [Cible privilégiée], [Calcul accéléré], [Dataplane / smartNIC],
+  ),
+  caption: [Comparaison synthétique de XRT et Coyote.],
+) <tab-xrt-coyote>
+
+== Le _Bytestream Decoder_ comme algorithme de référence
+
+L'algorithme retenu pour évaluer Coyote sur un cas réaliste est le _Bytestream
+Decoder_, un décodeur initialement développé dans le cadre de l'expérience ATLAS
+au CERN, plus précisément pour la chaîne de lecture du calorimètre à argon
+liquide (LAr) @atlas-lar. Sans entrer dans la physique sous-jacente, il suffit
+de retenir que les cartes _Front-End Boards_ (FEB) du détecteur émettent à
+chaque collision un flux compressé décrivant l'énergie déposée dans chaque
+cellule du calorimètre ; le décodeur reconstruit, à la volée, une représentation
+structurée de ces cellules.
+
+Ce choix est doublement pertinent. D'une part, l'algorithme constitue un cas
+d'usage représentatif d'une large famille de traitements _dataplane_ :
+décompression et parsing à la volée, consultation de tables (LUT), correction
+en arithmétique flottante, fusion de plusieurs flux d'entrée. D'autre part, le
+décodeur existe déjà sous la forme d'un design VHDL validé sous XRT @upegui-bsd
+sur Alveo U55C, ce qui en fait un point de comparaison idéal pour mesurer le
+coût et les bénéfices d'un portage vers Coyote.
+
+Le pipeline VHDL s'organise en plusieurs étages successifs. Un _FEB Parser_
+extrait les en-têtes et les champs utiles du flux brut, puis des décodeurs
+spécialisés reconstituent le gain, l'énergie et le temps de chaque cellule. Une
+table CAM associée à une LUT hachée fournit les coefficients de correction, qui
+sont appliqués par une unité flottante (FPU) avant qu'un _Output Merger_ ne
+sérialise le résultat dans une FIFO de sortie. En interne, le bus est large de
+32 bits ; le module expose deux flux AXI-Stream en entrée (données brutes et
+corrections initiales) et produit en sortie une structure de quatre mots de 32
+bits par cellule (_Gain+ID_, _Energy_, _Time_, _Quality_). Cette largeur de 32
+bits, héritée du contexte XRT, jouera un rôle central dans l'analyse de
+performance présentée au chapitre 5.
 
 
 // ─────────────────────────────────────────────────────────────────────────────
