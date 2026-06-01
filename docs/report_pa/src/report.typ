@@ -51,7 +51,7 @@ Le travail du portage coté design est la réecriture du Wrapper, et le fait que
 //      d'application (accélération PCIe, smartNIC)
 // Terminer par le plan du rapport (une phrase par chapitre).
 #lorem(80)
-
+#pagebreak()
 
 // ─────────────────────────────────────────────────────────────────────────────
 = Contexte technique
@@ -59,17 +59,15 @@ Le travail du portage coté design est la réecriture du Wrapper, et le fait que
 
 == Accélération matérielle par FPGA pour le traitement de flux
 
-Les FPGAs occupent une position singulière dans le paysage de l'accélération matérielle. Contrairement aux CPUs et aux GPUs, 
-dont l'architecture est figée et le parallélisme borné par le nombre de cœurs ou de threads, un FPGA permet de décrire une architecture sur mesure, dans laquelle chaque étage de traitement s'exécute en parallèle des autres. 
+Les FPGAs sont des matériels utiles à des applications nécessitant des traitements de données à très faible latence, avec des exigences de débit élevées, et une flexibilité d'architecture
+
+Contrairement aux CPUs et aux GPUs, dont l'architecture est figée et le parallélisme borné par le nombre de cœurs ou de threads, un FPGA permet de décrire une architecture sur mesure, dans laquelle chaque étage de traitement s'exécute en parallèle des autres. 
 Cette propriété rend les FPGAs particulièrement adaptés au traitement de flux de données en continu.
 
 Deux cartes ont été utilisées dans le cadre de ce projet. 
-La première, l'Alveo U55C, est une carte d'accélération basée sur un FPGA UltraScale+ avec 16 GB de HBM2 et une interface PCIe Gen4 x8 ; 
-elle est aujourd'hui bien supportée par les frameworks existants @alveo-u55c. 
+La première, l'Alveo U55C, est une carte d'accélération basée sur un FPGA UltraScale+; 
 La seconde, la V80, est plus récente : 
-elle repose sur l'architecture Versal (NoC matériel intégré, AI Engines optionnels), expose une interface PCIe Gen5 x8 et embarque également de la HBM @versal-v80. 
-Au démarrage du projet, le support de la V80 par les frameworks logiciels existants était quasi inexistant, ce qui en faisait précisément une plateforme intéressante à évaluer.
-
+elle repose sur l'architecture Versal (NoC matériel intégré, AI Engines), expose une interface PCIe Gen5 x8 et embarque également de la HBM @versal-v80. 
 
 #let img1 = figure(
   image("imgs/xilinx_u55c.png", width: 80%),
@@ -90,22 +88,24 @@ Au démarrage du projet, le support de la V80 par les frameworks logiciels exist
   img2,
 )
 
-== Frameworks de développement hôte-FPGA : XRT et Coyote
+== Frameworks de développement hôte-FPGA
 
-Exploiter un FPGA depuis un programme hôte suppose une pile logicielle qui prend
-en charge le transfert PCIe, la gestion mémoire, l'orchestration des kernels et
-la synchronisation. Deux frameworks sont ici comparés.
+Pour faciliter le développement et le déploiement d'applications sur FPGA, ils existent des frameworks nous fournissant un shell qui est une sorte de système d'exploitation
+pour FPGA, qui gére les aspects génériques de la communication avec l'hôte (PCIe, DMA, gestion mémoire, etc.) laissant à l'utilisateur la liberté de se concentrer sur la logique applicative. Le shell va généralement permettre à l'utilisateur de charger dynamiquement une application logique sur le FPGA, sans avoir à reprogrammer le FPGA en entier.
 
-*XRT* (_Xilinx Runtime_) est la pile officielle d'AMD/Xilinx pour les cartes
-Alveo @xrt. Le modèle de programmation repose sur des _kernels_ — généralement
-décrits en Vitis HLS, parfois en RTL — empaquetés dans un binaire `.xclbin`
-chargé par l'hôte. Les données transitent via des _buffers_ explicitement
-alloués, et l'API C++ (OpenCL ou XRT native) suit un schéma _offload batch_ :
-copie hôte→FPGA, exécution, copie FPGA→hôte. XRT bénéficie d'un écosystème
-mature, étroitement intégré à la _toolchain_ Vitis, mais présente deux limites
-pour le présent projet : il ne supporte pas la Versal V80, et son modèle batch
-s'adapte assez mal aux pipelines de flux continus typiques des cas d'usage
-_dataplane_.
+Ces frameworks fournissent également une API pour l'hôte, permettant de faciliter les interactions avec le FPGA tel que le chargement de la logique applicative et le transfert de données.
+
+=== XRT
+
+*XRT* est le framework officiel d'AMD/Xilinx qui va cibler principalement leurs cartes FPGA @xrt. 
+La programmation de la couche logique applicative repose sur des kernels généralement décrits en HLS.
+La transition des données entre l'hôte et le FPGA suit un schéma comme celui-ci :
+
+// Image montrant RAM Hote -> DDR/HBM FPGA -> Application logique -> DDR/HBM FPGA -> RAM Hote
+
+XRT bénéficie d'un écosystème mature, intégré à la toolchain Vitis, mais malheureusement ne supporte pas les cartes plus récentes comme la V80.
+
+=== Coyote
 
 *Coyote* est un framework open source développé à l'ETH Zürich qui adopte une
 approche radicalement différente @coyote. L'idée centrale est une séparation
