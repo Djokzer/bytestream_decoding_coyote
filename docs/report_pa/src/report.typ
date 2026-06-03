@@ -51,8 +51,8 @@ Le travail du portage coté design est la réecriture du Wrapper, et le fait que
 //      d'application (accélération PCIe, smartNIC)
 // Terminer par le plan du rapport (une phrase par chapitre).
 #lorem(80)
-#pagebreak()
 
+#pagebreak()
 // ─────────────────────────────────────────────────────────────────────────────
 = Contexte technique
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +95,7 @@ pour FPGA, qui gére les aspects génériques de la communication avec l'hôte (
 
 Ces frameworks fournissent également une API pour l'hôte, permettant de faciliter les interactions avec le FPGA tel que le chargement de la logique applicative et le transfert de données.
 
+#pagebreak()
 === XRT
 
 *XRT* est le framework officiel d'AMD/Xilinx qui va cibler principalement leurs cartes FPGA @xrt. 
@@ -107,68 +108,40 @@ XRT bénéficie d'un écosystème mature, intégré à la toolchain Vitis, mais 
 
 === Coyote
 
-*Coyote* est un framework open source développé à l'ETH Zürich qui adopte une
-approche radicalement différente @coyote. L'idée centrale est une séparation
-stricte _shell/role_ : le _shell_ regroupe toute l'infrastructure générique
-(contrôleur PCIe, DMA, gestion mémoire, interruptions, hugepages, support
-multi-locataire et RDMA optionnel) et est livré pré-implémenté ; le _role_
-correspond à la logique applicative écrite par l'utilisateur, qui dialogue avec
-le shell via une ou plusieurs interfaces AXI-Stream de 512 bits. Le driver
-noyau associé est générique et rechargeable sans reflasher le FPGA. Cette
-architecture cible explicitement les déploiements _dataplane_ et _smartNIC_, et
-le support de cartes récentes — notamment la V80 — y est ajouté plus rapidement
-que dans XRT. En contrepartie, la documentation est plus parcellaire et la
-maturité de l'outil reste inférieure à celle de XRT.
+*Coyote* est un framework open source développé à l'ETH Zürich @coyote.
+La logique applicative y prend la forme d'un ou plusieurs *vFPGAs* (_virtual FPGAs_), qui dialoguent avec le shell via des interfaces AXI-Stream de 512 bits.
+Plusieurs vFPGAs peuvent coexister dans le même shell, ce qui permet d'isoler plusieurs applications sur le même FPGA.
 
-Le tableau @tab-xrt-coyote synthétise les principales différences.
+Le top-level du vFPGA s'écrit en SystemVerilog, mais la logique applicative en dessous peut être décrite en VHDL, Verilog, SystemVerilog, HLS, ou encore SpinalHDL.
 
-#figure(
-  table(
-    columns: (auto, auto, auto),
-    align: (left, left, left),
-    table.header([], [*XRT*], [*Coyote*]),
-    [Modèle], [Offload batch], [Pipeline shell/role],
-    [Interface vers le _role_], [Buffers + kernels], [AXI-Stream 512 bits],
-    [Support V80], [Non], [Oui],
-    [Toolchain requise], [Vitis], [Vivado seul],
-    [Maturité], [Élevée], [En cours],
-    [Cible privilégiée], [Calcul accéléré], [Dataplane / smartNIC],
-  ),
-  caption: [Comparaison synthétique de XRT et Coyote.],
-) <tab-xrt-coyote>
+Coyote propose également plusieurs modes de transfert de données entre l'hôte et le FPGA, comme illustré sur le schéma suivant :
 
-== Le _Bytestream Decoder_ comme algorithme de référence
+// Image reprise de la doc Coyote montrant les différents modes de transfert hôte ↔ FPGA (host memory, card memory, RDMA, etc.)
 
-L'algorithme retenu pour évaluer Coyote sur un cas réaliste est le _Bytestream
-Decoder_, un décodeur initialement développé dans le cadre de l'expérience ATLAS
-au CERN, plus précisément pour la chaîne de lecture du calorimètre à argon
-liquide (LAr) @atlas-lar. Sans entrer dans la physique sous-jacente, il suffit
-de retenir que les cartes _Front-End Boards_ (FEB) du détecteur émettent à
-chaque collision un flux compressé décrivant l'énergie déposée dans chaque
-cellule du calorimètre ; le décodeur reconstruit, à la volée, une représentation
-structurée de ces cellules.
-
-Ce choix est doublement pertinent. D'une part, l'algorithme constitue un cas
-d'usage représentatif d'une large famille de traitements _dataplane_ :
-décompression et parsing à la volée, consultation de tables (LUT), correction
-en arithmétique flottante, fusion de plusieurs flux d'entrée. D'autre part, le
-décodeur existe déjà sous la forme d'un design VHDL validé sous XRT @upegui-bsd
-sur Alveo U55C, ce qui en fait un point de comparaison idéal pour mesurer le
-coût et les bénéfices d'un portage vers Coyote.
-
-Le pipeline VHDL s'organise en plusieurs étages successifs. Un _FEB Parser_
-extrait les en-têtes et les champs utiles du flux brut, puis des décodeurs
-spécialisés reconstituent le gain, l'énergie et le temps de chaque cellule. Une
-table CAM associée à une LUT hachée fournit les coefficients de correction, qui
-sont appliqués par une unité flottante (FPU) avant qu'un _Output Merger_ ne
-sérialise le résultat dans une FIFO de sortie. En interne, le bus est large de
-32 bits ; le module expose deux flux AXI-Stream en entrée (données brutes et
-corrections initiales) et produit en sortie une structure de quatre mots de 32
-bits par cellule (_Gain+ID_, _Energy_, _Time_, _Quality_). Cette largeur de 32
-bits, héritée du contexte XRT, jouera un rôle central dans l'analyse de
-performance présentée au chapitre 5.
+Le mode de transfert qui va nous intéresser en particulier c'est le mode "Local Read/Write/Transfer" qui va permettre de streamer les données directement entre la mémoire de l'hôte et le vFGPA, sans passer par une mémoire intermédiaire sur la carte.
+Enfin, Coyote supporte depuis récemment la V80, ce qui en fait à ce jour l'une des rares options viables pour exploiter cette carte.
 
 
+== Bytestream Decoder
+
+L'algorithme retenu pour tester Coyote sur un cas concret est le *Bytestream Decoder*, développé pour l'expérience ATLAS au CERN @atlas-lar.
+Il sert dans la chaîne de lecture du calorimètre à argon liquide (LAr), en tête du pipeline d'accélération du *Topo-automaton clustering*.
+
+Le flux d'entrée contient, sous forme brute, les données mesurées pour chaque cellule du calorimètre : gain, énergie, temps et qualité.
+Le décodeur va lire ce flux et reconstruire à la volée une structure exploitable côté logiciel, appelée *CaloCell container*.
+
+Cette implémentation est intéressante car le décodeur existe déjà sous la forme d'un design VHDL validé sous XRT sur des cartes Alveo @upegui-bsd, ce qui va nous donner un point de comparaison direct avec Coyote.
+
+// Image reprise des slides Upegui : architecture du pipeline (FEB Parser → décodeurs Gain/Energy/Time/Quality + ID LUT → FIFO + Packet Merge)
+
+Le pipeline prend en entrée deux flux : le ByteStream brut (~700 KB) et des données de correction (~7 KB).
+
+En interne, le pipeline travaille sur un bus de 32 bits.
+Le module expose donc deux flux AXI-Stream 32 bits en entrée, et produit en sortie quatre mots de 32 bits par cellule : Gain+ID, Energy, Time, Quality.
+Cette largeur de 32 bits, héritée de l'implémentation XRT d'origine, va jouer un rôle important dans l'analyse de performance présentée plus loin.
+
+
+#pagebreak()
 // ─────────────────────────────────────────────────────────────────────────────
 = Prise en main et évaluation de Coyote
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,92 +151,111 @@ performance présentée au chapitre 5.
 
 == Mise en place de l'environnement
 
-// Build hardware : CMake + Vivado 2024.2, flags -DFDEV_NAME=u55c / v80
-// Compilation du driver kernel (TARGET_PLATFORM=versal pour V80)
-// Cycle de déploiement : synthèse/impl → bitstream → programmation FPGA →
-//   rescan PCIe → chargement driver → test hôte
-// Exemple de référence utilisé : 01_hello_world (transfert simple hôte↔FPGA)
-#lorem(40)
+Le flot de développement avec Coyote se base sur CMake et Vivado 2024.2 (pour la V80).
+Le design hardware se build via CMake en précisant la carte cible avec `-DFDEV_NAME=u55c` ou `-DFDEV_NAME=v80`.
+
+Le driver noyau se compile à part. Pour la V80, il faut préciser `TARGET_PLATFORM=versal` au `make`, sinon le driver généré ne correspond pas à la carte.
+
+Un cycle de déploiement complet ressemble donc à ça :
++ build du bitstream
++ programmation du FPGA via Vivado
++ remove et rescan du bus PCIe (sinon le device n'est pas redétecté après reprogrammation)
++ chargement du driver Coyote
++ exécution du programme hôte
+
+Pour valider la chaîne, j'ai commencé par l'exemple `01_hello_world` fourni avec Coyote, qui réalise un simple transfert hôte ↔ FPGA. C'est sur cet exemple que la majorité des problèmes de mise en route ont été rencontrés.
 
 == Tests sur U55C — difficultés rencontrées
 
-// Problème 1 : "Invalid module format" au chargement du driver
-//   → cause : driver compilé pour une version de kernel différente
-//   → solution : recompiler le driver avec les headers du kernel courant
-// Problème 2 : programme hôte bloquant (transfert ne se termine jamais)
-//   → cause : IOMMU non activé en mode pass-through
-//   → solution partielle : amd_iommu=on iommu=pt dans les bootargs
-//   → instabilité résiduelle : le problème n'est pas totalement résolu sur U55C
-// Bilan U55C : comportement non déterministe, difficile à utiliser pour des
-// mesures reproductibles
-#lorem(60)
+Deux problèmes principaux sont apparus lors de la mise en route sur l'Alveo U55C.
 
-== Tests sur V80 — stabilisation
+*Device PCIe non détecté après reprogrammation du FPGA.*
+Quand on reprogramme le FPGA, le device PCIe n'est plus directement utilisable côté hôte, ce qui fait planter le programme de test avec une erreur du type `cThread instance could not be obtained`.
+Au départ, je ne faisais pas la bonne manipulation pour réinitialiser le bus PCIe. Il faut en réalité forcer un *remove* du device, puis un *rescan* du bus, avant de recharger le driver :
 
-// Contexte : la V80 vient d'être officiellement supportée dans Coyote au
-// moment du projet → validation de ce support était un objectif secondaire
-// Problème principal : échec de chargement du driver (MSI-X, manque de mémoire
-// PCI lors de l'allocation des vecteurs d'interruption)
-//   → solution : ajouter pci=realloc dans les bootargs GRUB
-// Résultat : comportement stable et reproductible à chaque cycle de test
-// Bilan V80 : carte retenue comme plateforme principale pour les mesures
-#lorem(60)
+```bash
+sudo sh -c "echo 1 > /sys/bus/pci/devices/0000:21:00.0/remove"
+sudo sh -c "echo 1 > /sys/bus/pci/rescan"
+```
 
-== Retour d'expérience sur Coyote comme framework
+*Programme hôte bloquant pendant le transfert.*
+Le design est programmé, le driver se charge sans erreur, mais le programme hôte reste bloqué pendant le transfert.
+Initialement, on pensait que le problème venait de l'IOMMU qui n'était pas en mode passthrough. Ajouter `amd_iommu=on iommu=pt` dans les bootargs GRUB semblait fixer le souci au début, mais au final non : le comportement est resté instable.
 
-// Ce que Coyote apporte par rapport à XRT du point de vue du développeur :
-//   - modèle shell/role clair, pas de dépendance à Vitis
-//   - driver kernel générique, rechargeable sans reflasher le FPGA
-//   - API hôte C++ (cThread, cBench) relativement simple pour les flux
-// Ce qui complexifie la prise en main :
-//   - documentation moins fournie que XRT/Vitis
-//   - problèmes de compatibilité kernel/driver fréquents
-//   - AXI-Stream 512 bits impose d'adapter tout design 32 bits (cf. chapitre suivant)
-// Rapport au cas smartNIC :
-//   - l'architecture shell/role et la gestion PCIe native sont directement
-//     adaptées à un déploiement en dataplane (pas de dépendance à un OS Xilinx)
-//   - la V80 (PCIe 5.0) est un facteur de forme pertinent pour ce type d'usage
-#lorem(60)
+Dans certains cas, même avec le bitstream et le driver chargés correctement, le programme hôte se bloque toujours sur le transfert.
+Une analyse avec l'ILA montre que le signal `tvalid` de l'interface réceptrice ne passe jamais à 1, donc le transfert ne démarre pas du tout côté FPGA.
+La cause exacte n'a pas pu être identifiée dans le temps imparti.
 
+Au final, la U55C n'est pas fiable pour faire des mesures reproductibles, ce qui nous a poussé à utiliser la V80 comme plateforme principale.
 
+#pagebreak()
+== Tests sur V80 — difficultés rencontrées
+
+La V80 venait d'être officiellement supportée par Coyote au moment du projet, donc valider ce support faisait partie des objectifs.
+
+Le problème principal rencontré était au chargement du driver, avec une erreur liée au MSI-X.
+La carte expose un grand nombre de vecteurs d'interruption, et le BIOS ne réserve pas assez de mémoire PCI pour les allouer.
+Le fix consiste à ajouter `pci=realloc=on` dans les bootargs GRUB pour forcer le kernel à réallouer les ressources PCI au boot.
+
+Une fois ce problème réglé, la V80 fonctionne de manière stable et reproductible. À noter cependant qu'à chaque reprogrammation de la V80 via Vivado, il peut être nécessaire de redémarrer la machine hôte pour forcer une réallocation propre du PCI au boot, sinon on peut rencontrer à nouveau cette erreur.
+
+C'est cette carte qui a servi de plateforme pour toutes les mesures de performance présentées plus loin.
+
+#pagebreak()
 // ─────────────────────────────────────────────────────────────────────────────
 = Portage du Bytestream Decoder sur Coyote
 // ─────────────────────────────────────────────────────────────────────────────
 
+Le portage du Bytestream Decoder de XRT vers Coyote consiste à refaire le wrapper au format attendu par Coyote, et réécrire le code hôte autour de l'API Coyote.
+Le coeur VHDL du décodeur, lui, reste identique à la version XRT d'origine.
+
 == Adaptation du wrapper hardware (Design 1)
 
-// Problème d'interface : Coyote expose un bus AXI-Stream de 512 bits ;
-// le design original travaille en mots de 32 bits.
-// Réécriture du wrapper vfpga_top.svh :
-//   - côté entrée : extraction d'un mot 32 bits par beat 512 bits (1/16 utilisé)
-//   - instanciation du ByteStream_Decoder_Wrapper VHDL inchangé
-//   - côté sortie : encapsulation d'un mot 32 bits dans un beat 512 bits
-// Intégration de l'ILA pour l'instrumentation :
-//   - script init_ip.tcl : IP ILA, 8 sondes sur tvalid/tready des deux AXI-S
-//   - permettra de mesurer les duty cycles et de localiser les goulots
-#lorem(60)
+Le shell Coyote expose un bus AXI-Stream de 512 bits côté vFPGA, alors que le Bytestream Decoder travaille en interne sur des mots de 32 bits.
+Le rôle du wrapper, écrit en SystemVerilog dans `vfpga_top.svh`, est donc d'instancier le module VHDL et de connecter ses ports 32 bits aux bits de poids faible de chaque interface AXI-Stream.
+
+Concrètement :
+- En entrée, seuls les bits `[31:0]` des flux `axis_host_recv[0]` (données brutes) et `axis_host_recv[1]` (corrections initiales) sont connectés au décodeur.
+- En sortie, les bits `[31:0]` du flux `axis_host_send[0]` portent un mot de sortie par cycle.
+- Les 480 bits restants de chaque bus ne sont pas utilisés. Le bus est donc sous-utilisé d'un facteur 16, ce qui est volontaire pour ce premier design.
+
+Le wrapper instancie aussi une ILA décrit via le script `init_ip.tcl`, avec des sondes sur les signaux axi-stream des interfaces d'entrée et de sortie. Cela va permettre de mesurer les duty cycles côté FPGA et d'identifier les goulots dans l'analyse de performance présentée plus loin.
 
 == Adaptation du code hôte
 
-// API Coyote utilisée :
-//   - coyote::cThread (gestion du thread de communication PCIe)
-//   - coyote::cBench (mesures de performance répétées)
-// Chargement des données :
-//   - fichier .raw : 174 736 mots de 32 bits (données brutes bytestream)
-//   - fichier .bin : 1 833 mots de 32 bits (valeurs de correction)
-// Packing pour le bus 512 bits :
-//   - un mot 32 bits par beat (sous-utilisation ×16 volontaire pour le Design 1)
-// Deux streams distincts :
-//   - stream 0 : données brutes, stream 1 : corrections initiales
-// Récupération et unpacking de la sortie :
-//   - structure CaloCell { Gain_and_ID, Energy, Time, Quality }
-//   - un mot 32 bits par beat → une composante par cellule
-// Comparer avec le code hôte XRT d'origine (Upegui) :
-//   - différences API (xclbin vs driver Coyote, buffers vs hugepages)
-//   - volume de boilerplate similaire, paradigme légèrement différent
-#lorem(80)
+Le code hôte a été entièrement réécrit autour de l'API Coyote, à la place du modèle `xclbin` + buffers de XRT.
 
+Le programme commence par charger les deux fichiers d'entrée :
+- `Uncompressed_data_LAR_only.raw` : 174 736 mots de 32 bits (données brutes du bytestream)
+- `initial_correction_values.bin` : 1 833 mots de 32 bits (valeurs de correction)
 
+Coyote travaillant sur des blocs de 512 bits, chaque mot 32 bits est placé dans les bits de poids faible d'un bloc de 64 octets, les 60 octets restants étant remplis de zéros.
+
+Les données sont ensuite envoyées au FPGA via deux flux distincts :
+- Stream 0 : les données brutes du bytestream
+- Stream 1 : les valeurs de correction, envoyées une seule fois en début d'exécution
+
+Le transfert principal est déclenché par deux appels à `coyote_thread.invoke()` : un `LOCAL_READ` pour pousser les données brutes vers le FPGA, et un `LOCAL_WRITE` pour récupérer la sortie. Le programme attend ensuite la complétion des deux opérations.
+
+Côté sortie, chaque CaloCell occupe quatre blocs de 512 bits successifs, à raison d'un mot 32 bits par bloc : Gain+ID, Energy, Time, puis Quality. L'unpacking parcourt donc le buffer de sortie quatre blocs à la fois pour reconstruire chaque cellule.
+
+#pagebreak()
+== Design 2 — sortie 128 bits
+
+La sortie du décodeur, une cellule *CaloCell*, est constituée de 4 mots de 32 bits.
+Dans le Design 1, ces 4 mots sont émis un par un par l'`Output_Merger`, ce qui demande 4 blocs de 512 bits sur le bus AXI-Stream pour transférer en réalité seulement 128 bits utiles.
+
+L'idée du Design 2 est de les regrouper en un seul mot de 128 bits, et de les envoyer directement dans un seul bloc de 512 bits. On passe ainsi de 4 blocs à 1 bloc par cellule, soit un facteur ×4 sur la bande passante utile en sortie.
+
+À noter que la variante 128 bits de l'`Output_Merger` était déjà présente dans le code source VHDL, mais c'est la variante 32 bits (`Output_Merger_32`) qui était utilisée pour le portage sous XRT. Les deux versions cohabitent donc dans `Byte_Stream_Decoder_parallel.vhd`, et il a suffi de swapper l'instanciation pour réactiver la variante 128 bits.
+
+Côté wrapper, le changement se résume à connecter les bits `[127:0]` du flux de sortie au lieu des bits `[31:0]`. Les 384 bits restants du bloc ne sont toujours pas utilisés, mais le ratio passe de 1/16 à 4/16.
+
+Côté hôte, l'unpacking est ajusté pour lire une cellule complète par bloc, en extrayant les 4 champs (Gain+ID, Energy, Time, Quality) dans les 16 octets de poids faible.
+
+Le reste de la chaîne reste strictement identique au Design 1.
+
+#pagebreak()
 // ─────────────────────────────────────────────────────────────────────────────
 = Analyse des performances et optimisation
 // ─────────────────────────────────────────────────────────────────────────────
