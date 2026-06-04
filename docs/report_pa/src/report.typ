@@ -4,7 +4,7 @@
   title: "Portage du Bytestream Decoder sur Coyote",
   author: "Abivarman Kandiah",
   orientation: "Computer Science",
-  teacher: "Andres Upegui Posada, Quentin Berthet",
+  teacher: "Andres Upegui, Quentin Berthet",
   company: "",
   confidential: false,
 )
@@ -243,11 +243,11 @@ Côté sortie, chaque CaloCell occupe quatre blocs de 512 bits successifs, à ra
 == Design 2 — sortie 128 bits
 
 La sortie du décodeur, une cellule *CaloCell*, est constituée de 4 mots de 32 bits.
-Dans le Design 1, ces 4 mots sont émis un par un par l'`Output_Merger`, ce qui demande 4 blocs de 512 bits sur le bus AXI-Stream pour transférer en réalité seulement 128 bits utiles.
+Dans le Design 1, ces 4 mots sont émis un par un par l'`Output_Merger_32`, ce qui demande 4 blocs de 512 bits sur le bus AXI-Stream pour transférer en réalité seulement 128 bits utiles.
 
 L'idée du Design 2 est de les regrouper en un seul mot de 128 bits, et de les envoyer directement dans un seul bloc de 512 bits. On passe ainsi de 4 blocs à 1 bloc par cellule, soit un facteur ×4 sur la bande passante utile en sortie.
 
-À noter que la variante 128 bits de l'`Output_Merger` était déjà présente dans le code source VHDL, mais c'est la variante 32 bits (`Output_Merger_32`) qui était utilisée pour le portage sous XRT. Les deux versions cohabitent donc dans `Byte_Stream_Decoder_parallel.vhd`, et il a suffi de swapper l'instanciation pour réactiver la variante 128 bits.
+À noter que la variante 128 bits du merger (`Output_Merger_128`) était déjà présente dans le code source VHDL, mais c'est la variante 32 bits (`Output_Merger_32`) qui était utilisée pour le portage sous XRT. Les deux versions cohabitent donc dans `Byte_Stream_Decoder_parallel.vhd`, et il a suffi de swapper l'instanciation pour activer la variante 128 bits.
 
 Côté wrapper, le changement se résume à connecter les bits `[127:0]` du flux de sortie au lieu des bits `[31:0]`. Les 384 bits restants du bloc ne sont toujours pas utilisés, mais le ratio passe de 1/16 à 4/16.
 
@@ -262,146 +262,118 @@ Le reste de la chaîne reste strictement identique au Design 1.
 
 == Méthodologie de mesure (ILA)
 
-// Protocole ILA :
-//   - trigger sur tvalid du récepteur, 512 échantillons post-trigger
-//   - script ila_utilization.py : parsage CSV Vivado, calcul ratios high/total
-//     pour tvalid et tready sur chaque interface AXI-S
-// Interprétation des signaux :
-//   - tready entrée faible → FPGA ne peut pas consommer assez vite (goulot aval)
-//   - tvalid sortie élevé → pipeline produit des données sans blocage
-#lorem(40)
+Pour analyser le comportement du pipeline côté FPGA, une IP ILA (_Integrated Logic Analyzer_) a été instanciée dans le wrapper du vFPGA. Elle sonde les signaux `tvalid`, `tready`, `tlast` et `tdata` des interfaces AXI-Stream d'entrée (`axis_host_recv[0]`) et de sortie (`axis_host_send[0]`).
+
+L'ILA est configurée pour déclencher sur le `tvalid` de l'interface de réception et capturer 512 échantillons post-trigger, ce qui couvre une fenêtre représentative du transfert.
+
+Deux ratios sont particulièrement intéressants à observer :
+- *tready entrée* : indique la proportion de cycles pendant lesquels le FPGA est prêt à consommer une donnée. S'il est faible, c'est que le pipeline interne ne peut pas suivre, et le goulot est en aval.
+- *tvalid sortie* : indique la proportion de cycles pendant lesquels le FPGA a une donnée à émettre. S'il est élevé, c'est que le pipeline produit sans blocage.
+
+Le `tvalid` côté entrée et le `tready` côté sortie sont eux quasiment toujours à 1 dans nos mesures : l'hôte Coyote a toujours des données prêtes à envoyer, et toujours assez de place pour absorber la sortie.
 
 == Design 1 — diagnostic du goulot
 
-// Résultats ILA Design 1 (250 MHz, sortie 32 bits) :
-//   - tready entrée (axis_host_recv[0]) : 20.9 %
-//   - tvalid sortie (axis_host_send[0]) : 100 %
-// Interprétation : le pipeline FPGA est prêt en sortie en permanence, mais
-// ne peut absorber l'entrée que 21 % du temps → goulot à la sortie
-// Cause identifiée : Output Merger 32 bits émet une seule composante par cycle
-// (4 cycles nécessaires pour émettre une cellule complète)
-#lorem(40)
+Le Design 1 a été synthétisé à 250 MHz avec la sortie 32 bits héritée du portage XRT. Le temps total mesuré côté hôte pour le transfert principal est de 3.17 ms.
 
-== Design 2 — sortie 128 bits
+Pour comprendre où se situe le goulot, on regarde les 4 signaux de handshake AXI-Stream côté FPGA (@fig-ila-design1) :
 
-// Modification : Output Merger réécrit pour émettre les 4 mots d'une cellule
-// simultanément (128 bits) en un seul beat
-// Adaptation hôte : lecture 128 bits par beat, extraction des 4 composantes
-// Résultats à 250 MHz :
-//   - tready entrée : 88.7 % (+×4.2)
-//   - tvalid sortie : 99.4 %
-//   - temps de transfert : 0.83 ms (vs 3.17 ms → ×3.8)
-//   - correctness : 195 072 cellules identiques entre Design 1 et Design 2
-#lorem(60)
+#figure(
+  image("imgs/ila_design1_signals.svg", width: 95%),
+  caption: [Capture ILA des quatre signaux de handshake AXI-Stream du Design 1, à 250 MHz, sur 120 cycles post-trigger. Le `tready` de l'entrée est le seul signal qui pulse ; les trois autres restent collés à 1 sur toute la fenêtre.],
+) <fig-ila-design1>
+
+Sur la fenêtre complète de 512 échantillons capturés, le `tvalid` de l'entrée et les `tvalid` / `tready` de la sortie sont à 100 %. Seul le `tready` de l'entrée descend, à 20.9 %.
+
+L'interprétation est directe. L'hôte a toujours des données à envoyer (`tvalid` entrée à 1), le FPGA a toujours une donnée à émettre (`tvalid` sortie à 1), et l'hôte est toujours prêt à recevoir (`tready` sortie à 1). Le seul facteur limitant est donc le FPGA qui ne peut absorber l'entrée que pendant environ un cinquième du temps. Le goulot est clairement en aval, plus loin dans le pipeline.
+
+Cela correspond bien à ce qu'on attendait : la sortie émet un mot 32 bits par cycle, alors qu'une cellule complète en compte quatre. Le merger met donc 4 cycles pour évacuer une cellule, pendant lesquels les étages amont sont gelés.
+
+== Design 2 — gain de performance
+
+Avec l'`Output_Merger_128`, à la même fréquence de 250 MHz, le temps de transfert mesuré côté hôte chute de 3.17 ms à 0.83 ms, soit un gain d'un facteur ×3.8.
+
+Côté ILA, les ratios deviennent : `tready` entrée à 88.7 % et `tvalid` sortie à 99.4 %. Le pipeline consomme maintenant l'entrée la quasi-totalité du temps, ce qui valide le diagnostic posé sur le Design 1.
+
+La figure @fig-ila-comparison illustre visuellement cette différence de comportement entre les deux designs sur le signal `tready` de l'entrée.
+
+#figure(
+  image("imgs/ila_tready_comparison.svg", width: 95%),
+  caption: [Capture ILA du signal `tready` de l'AXI-Stream d'entrée sur le Design 1 (haut) et le Design 2 (bas), à 250 MHz. Sur le Design 1, le signal pulse périodiquement (un cycle haut sur quatre) ; sur le Design 2, il reste à 1 la quasi-totalité du temps. La fenêtre affichée couvre 120 cycles post-trigger ; les ratios cités dans le texte (20.9 % / 88.7 %) sont calculés sur la fenêtre complète de 512 échantillons.],
+) <fig-ila-comparison>
 
 == Montée en fréquence à 400 MHz
 
-// Démarche : paramétrage CMake, analyse timing Vivado (WNS, TNS)
-// Résultats :
-//   - tready entrée : 90.0 %, tvalid sortie : 99.4 %
-//   - temps de transfert : 0.82 ms (gain marginal de ~1 % vs 250 MHz)
-// Interprétation : le goulot restant n'est plus dans le pipeline FPGA mais
-// dans le transfert PCIe ou dans la sous-utilisation du bus d'entrée (1/16)
-// → monter la fréquence n'aide plus ; il faut élargir le bus d'entrée
-#lorem(40)
+Une fois le goulot de sortie levé, la question se pose de savoir si monter la fréquence du pipeline permet de gagner encore en débit. Le Design 2 a donc été resynthétisé à 400 MHz, en paramétrant la fréquence cible côté CMake.
+
+Le temps de transfert tombe à 0.82 ms, soit un gain marginal d'environ 1 % par rapport au Design 2 à 250 MHz.
+
+Côté ILA, les ratios sont eux aussi très proches du cas 250 MHz : `tready` entrée à 90.0 % et `tvalid` sortie à 99.4 %. Cela signifie que le pipeline FPGA n'est plus le facteur limitant. Le goulot restant est ailleurs : soit dans le transfert PCIe lui-même, soit dans la sous-utilisation persistante du bus d'entrée (toujours 1 mot 32 bits par bloc de 512 bits, soit 1/16). Monter la fréquence ne change rien à ces deux facteurs.
+
+== Comparaison avec XRT
+
+Pour situer ces résultats par rapport au point de départ, on peut les comparer à l'implémentation XRT d'origine du Bytestream Decoder, qui tournait sur une carte VCK5000 à 350 MHz avec une sortie 32 bits.
+
+Sur cette implémentation, le programme hôte rapporte les temps suivants :
+- écriture des données vers la DDR de la carte : 0.26 ms
+- écriture des paramètres de correction : 0.28 ms
+- temps total du kernel : 2.94 ms
+- lecture des résultats depuis la DDR : 0.59 ms
+- temps total bout-en-bout : 4.12 ms
+
+Deux différences importantes sont à garder à l'esprit pour interpréter cette comparaison.
+
+D'une part, les cartes ne sont pas les mêmes. Une partie des écarts de performance peut donc venir du matériel et non du framework.
+
+D'autre part, le modèle de transfert n'est pas le même. Sous XRT, les données doivent transiter par la mémoire DDR/HBM de la carte avant d'être consommées par le kernel, et la sortie suit le chemin inverse. Coyote permet à l'inverse de streamer directement la mémoire hôte vers le vFPGA, ce qui évite les deux étapes d'écriture et de lecture en mémoire embarquée. C'est précisément le mode "Local Read/Write" mentionné dans le contexte technique.
+
+À design équivalent (sortie 32 bits, fréquence comparable), le temps total bout-en-bout est dans le même ordre de grandeur : 4.12 ms sous XRT contre 3.17 ms pour le Design 1 sous Coyote. La différence vient principalement de l'élimination des copies DDR. Une fois le Design 2 introduit, l'écart se creuse nettement : 0.83 ms sous Coyote, soit environ ×5 par rapport à XRT.
 
 == Tableau comparatif et bilan
 
+Le tableau @tab-perf-comparison récapitule les configurations testées et leur point de comparaison XRT.
+
 #figure(
   table(
-    columns: (auto, auto, auto, auto, auto),
+    columns: (auto, auto, auto, auto, auto, auto),
     align: center,
     table.header(
-      [*Design*], [*Fréquence*], [*Sortie*], [*Temps transfert*], [*tready entrée*],
+      [*Framework*], [*Carte*], [*Fréquence*], [*Sortie*], [*Temps total*], [*tready entrée*],
     ),
-    [Design 1], [250 MHz], [32 bits],  [3.17 ms], [20.9 %],
-    [Design 2], [250 MHz], [128 bits], [0.83 ms], [88.7 %],
-    [Design 2], [400 MHz], [128 bits], [0.82 ms], [90.0 %],
+    [XRT],     [VCK5000], [350 MHz], [32 bits],  [4.12 ms], [—],
+    [Coyote (Design 1)], [V80], [250 MHz], [32 bits],  [3.17 ms], [20.9 %],
+    [Coyote (Design 2)], [V80], [250 MHz], [128 bits], [0.83 ms], [88.7 %],
+    [Coyote (Design 2)], [V80], [400 MHz], [128 bits], [0.82 ms], [90.0 %],
   ),
-  caption: [Comparaison des performances des trois configurations testées sur V80.],
-)
+  caption: [Comparaison des performances de l'implémentation XRT d'origine et des configurations Coyote testées sur V80.],
+) <tab-perf-comparison>
 
-// Synthèse : l'optimisation principale vient de l'alignement entre la largeur
-// de sortie du pipeline et celle du bus Coyote, pas de la fréquence.
-// La prochaine optimisation naturelle serait d'élargir le bus d'entrée (×16).
-#lorem(30)
+Trois conclusions ressortent de cette analyse.
 
+D'abord, à design équivalent (sortie 32 bits), Coyote est déjà légèrement plus rapide que XRT bout-en-bout, principalement grâce au streaming direct mémoire hôte ↔ vFPGA qui évite les copies DDR.
 
-// ─────────────────────────────────────────────────────────────────────────────
-= Discussion : Coyote face à XRT et perspectives smartNIC
-// ─────────────────────────────────────────────────────────────────────────────
+Ensuite, l'optimisation décisive vient de l'alignement entre la largeur de sortie du pipeline et celle du bus Coyote, pas de la fréquence. Passer de l'`Output_Merger_32` à l'`Output_Merger_128` apporte un facteur ×3.8 sur le temps de transfert, alors que doubler la fréquence n'apporte qu'environ 1 % supplémentaire.
 
-// Ce chapitre prend du recul sur les résultats pour répondre à la question
-// centrale : qu'apporte Coyote par rapport à XRT sur ce type d'algorithme ?
-
-== Coyote vs XRT — bilan du portage
-
-// Effort de portage :
-//   - côté hardware : réécriture du wrapper (interface 512 bits) est le seul
-//     changement structurel ; le cœur VHDL est inchangé
-//   - côté hôte : API différente mais volume de code comparable
-// Fonctionnalité :
-//   - Coyote reproduit fidèlement les résultats XRT (même sortie, même algo)
-// Support matériel :
-//   - XRT absent sur V80 → Coyote est la seule option viable sur cette carte
-//   - avantage concret et non trivial dans un contexte de déploiement matériel récent
-// Performance :
-//   - goulot non lié au framework mais à la sous-utilisation du bus 512 bits
-//   - à iso-design, pas de raison de penser que XRT serait plus rapide
-#lorem(60)
-
-== Pertinence pour des cas d'usage de type smartNIC
-
-// Un smartNIC = FPGA embarqué dans une carte réseau, traitement in-line
-// des flux de données sans impliquer le CPU host (ou de façon minimale).
-// En quoi Coyote convient à ce modèle :
-//   - shell/role → isolation claire entre le réseau/PCIe (shell) et l'appli (role)
-//   - pas de dépendance à XRT/Vitis au runtime → déployable plus facilement
-//   - gestion des hugepages + bus 512 bits → adapté aux débits élevés
-//   - PCIe 5.0 sur V80 → bande passante suffisante pour des charges réseau réelles
-// Limites identifiées dans ce projet applicables au cas smartNIC :
-//   - sous-utilisation potentielle du bus si l'algorithme n'est pas conçu pour
-//     des mots larges (nécessite un travail de packing/unpacking)
-//   - maturité moindre (bugs de driver, instabilité U55C) à surveiller en prod
-// Conclusion intermédiaire : Coyote est un candidat sérieux pour des déploiements
-// dataplane sur FPGAs récents là où XRT n'est pas disponible ou trop rigide.
-#lorem(60)
-
-== Perspectives d'amélioration
-
-// Élargissement du bus d'entrée :
-//   actuellement 1 mot de 32 bits sur 512 disponibles (ratio 1/16) ;
-//   packer 16 mots par beat multiplierait le débit d'ingestion par 16
-// Pipeline multi-événement :
-//   traiter plusieurs bytestreams en parallèle dans le même shell Coyote
-// Stabilisation U55C :
-//   investigation plus poussée du chemin PCIe/IOMMU nécessaire
-// Comparaison XRT directe sur U55C :
-//   mesurer les mêmes métriques ILA sous XRT pour un tableau comparatif complet
-#lorem(40)
+La prochaine optimisation naturelle serait d'élargir aussi le bus d'entrée, qui n'utilise actuellement qu'un mot 32 bits sur 512 disponibles par bloc.
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 = Conclusion
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Rappeler l'objectif central : évaluer Coyote comme alternative à XRT sur
-// un algorithme dataplane réel, et valider son support sur la V80.
-// Bilan des trois objectifs :
-//   1. Coyote pris en main et validé ; V80 stable, U55C instable (problème connu)
-//   2. Portage réussi : design VHDL inchangé, wrapper et hôte adaptés
-//      → Design 2 offre ×3.8 de gain par rapport au Design 1 naïf
-//   3. Coyote viable sur V80 là où XRT est absent ; architecture pertinente
-//      pour des cas smartNIC/dataplane
-// Difficultés principales :
-//   - problème MSI-X V80 (pci=realloc)
-//   - interface 512 bits vs 32 bits (impose un travail de packing)
-//   - instabilité U55C non résolue
-// Questions ouvertes :
-//   - sous-utilisation du bus d'entrée (1/16)
-//   - pipeline multi-événement
-//   - benchmark XRT vs Coyote à iso-design sur U55C
-#lorem(60)
+L'objectif principal de ce projet était d'évaluer Coyote comme alternative à XRT, sur un cas d'usage concret, et de valider son support sur la V80 récemment ajouté. Sur les trois axes annoncés en introduction, le bilan est globalement positif.
+
+D'abord, la *prise en main de Coyote* a été menée sur les deux cartes à disposition. La V80 fonctionne de manière stable et reproductible une fois le fix `pci=realloc=on` appliqué dans les bootargs GRUB, ce qui constitue une première validation pratique du support récent de cette carte par le framework. La U55C, en revanche, est restée instable : le bitstream se programme, le driver se charge, mais le `tvalid` de l'AXI-Stream d'entrée ne démarre jamais dans certains cas, sans cause identifiée dans le temps imparti.
+
+Ensuite, le *portage du Bytestream Decoder* a abouti sans toucher au cœur VHDL du décodeur. L'essentiel du travail d'adaptation tient dans le wrapper SystemVerilog et dans la réécriture du code hôte autour de l'API Coyote. Une variante Design 2 a aussi été produite en élargissant la sortie de 32 à 128 bits, via le merger déjà présent dans le code VHDL d'origine. Cette modification, minime côté hardware, a apporté un facteur ×3.8 sur le temps de transfert.
+
+Enfin, la *comparaison avec XRT* montre que Coyote est viable à design équivalent, et bénéficie en plus du streaming direct mémoire hôte ↔ vFPGA, qui évite les copies DDR imposées par XRT. Sur la V80 en particulier, c'est aujourd'hui l'une des seules options exploitables, vu que XRT ne supporte pas cette carte.
+
+Plusieurs *difficultés* sont à signaler. Le problème MSI-X au chargement du driver V80 a demandé un fix dans les bootargs GRUB, et la reprogrammation de la carte peut encore exiger un redémarrage de la machine hôte pour que les ressources PCI soient réallouées proprement. Côté U55C, l'instabilité au démarrage des transferts reste sans explication satisfaisante : malgré plusieurs hypothèses testées (driver, IOMMU, rescan PCIe), le `tvalid` d'entrée ne démarre toujours pas dans certains cas, et la cause n'a pas pu être isolée dans le temps imparti.
+
+Plusieurs *pistes* d'amélioration ressortent enfin des mesures. La plus directe serait d'élargir aussi le bus d'entrée : actuellement un seul mot de 32 bits sur 512 est utilisé par bloc, soit un ratio 1/16. Packer 16 mots par bloc devrait théoriquement multiplier d'autant le débit d'ingestion, à condition que le pipeline interne du décodeur puisse suivre. Au-delà, traiter plusieurs événements en parallèle dans un même shell Coyote, en exploitant le support multi-vFPGA, constituerait un prolongement naturel.
+
+Une piste plus ambitieuse, et plus en phase avec l'esprit de Coyote, serait d'exploiter le scénario *smartNIC*. Actuellement, le Bytestream Decoder et l'ensemble du pipeline qui le suit tournent sur GPU, et les données détecteur transitent par une carte réseau classique avant d'être copiées vers le GPU. Un FPGA Coyote installé en lieu et place de la carte réseau pourrait ingérer directement le flux du détecteur, exécuter le Bytestream Decoder à la volée, et transférer ensuite le `CaloCell container` directement dans la mémoire du GPU, sans repasser par le CPU hôte. Ce type de déploiement correspond exactement aux cas d'usage dataplane visés par Coyote.
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -414,12 +386,12 @@ Le reste de la chaîne reste strictement identique au Design 1.
 
 #show: appendix
 
-= Code — Wrapper vfpga_top.svh
+= Dépôts de code
 
-// Insérer ici des extraits commentés du wrapper SystemVerilog.
-#lorem(30)
+Le code complet du portage sous Coyote est disponible sur GitHub :
 
-= Script d'analyse ILA
+#link("https://github.com/Djokzer/coyote_pa")[`https://github.com/Djokzer/coyote_pa`]
 
-// Insérer ici le script ila_utilization.py ou des extraits pertinents.
-#lorem(30)
+Le design XRT d'origine du Bytestream Decoder, développé par Andres Upegui, est disponible sur le GitLab du CERN :
+
+#link("https://gitlab.cern.ch/aupeguip/ATLAS_ByteStreamDecoding_FPGA")[`https://gitlab.cern.ch/aupeguip/ATLAS_ByteStreamDecoding_FPGA`]
