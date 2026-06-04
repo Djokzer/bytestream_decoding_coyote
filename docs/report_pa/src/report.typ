@@ -351,6 +351,33 @@ Le temps de transfert tombe à 0.82 ms, soit un gain marginal d'environ 1 % par 
 
 Côté ILA, les ratios sont eux aussi très proches du cas 250 MHz : `tready` entrée à 90.0 % et `tvalid` sortie à 99.4 %. Cela signifie que le pipeline FPGA n'est plus le facteur limitant. Le goulot restant est ailleurs : soit dans le transfert PCIe lui-même, soit dans la sous-utilisation persistante du bus d'entrée (toujours 1 mot 32 bits par bloc de 512 bits, soit 1/16). Monter la fréquence ne change rien à ces deux facteurs.
 
+== Utilisation des ressources
+
+Le tableau @tab-resources résume les ressources consommées côté user logic (post-synthèse), pour les deux designs sur la V80.
+
+#figure(
+  table(
+    columns: (auto, auto, auto),
+    align: (left, right, right),
+    table.header(
+      [*Ressource*], [*Design 1*], [*Design 2*],
+    ),
+    [Registers (FF)],       [30 633 (0.59 %)], [30 631 (0.59 %)],
+    [CLB LUTs],              [16 278 (0.63 %)], [16 175 (0.63 %)],
+    [— LUT as Logic],        [13 714],          [13 611],
+    [— LUT as Memory],       [2 564],           [2 564],
+    [Block RAM Tile],        [319.5 (8.54 %)],  [319.5 (8.54 %)],
+  ),
+  caption: [Ressources consommées par la user logic sur la V80, post-synthèse.],
+) <tab-resources>
+
+Deux constats simples ressortent.
+
+D'abord, le décodeur en lui-même utilise très peu de ressources sur la V80 : moins de 1 % des registres et des LUTs, et environ 8.5 % des blocs RAM. La pression sur les BRAM vient principalement des tables de correspondance utilisées pour la conversion d'ID et les coefficients de correction d'énergie.
+
+Ensuite, le passage du Design 1 au Design 2 n'a pratiquement aucun impact sur les ressources. Réécrire l'`Output_Merger` pour sortir 128 bits au lieu de 32 ne change pas la complexité globale du module, et la fréquence cible (250 ou 400 MHz) n'influence pas non plus les ressources consommées — elle ne joue que sur les contraintes de timing.
+
+#pagebreak()
 == Comparaison avec XRT
 
 Pour situer ces résultats par rapport au point de départ, on peut les comparer à l'implémentation XRT d'origine du Bytestream Decoder, qui tournait sur une carte VCK5000 à 350 MHz avec une sortie 32 bits.
@@ -370,7 +397,6 @@ D'autre part, le modèle de transfert n'est pas le même. Sous XRT, les données
 
 À design équivalent (sortie 32 bits, fréquence comparable), le temps total bout-en-bout est dans le même ordre de grandeur : 4.12 ms sous XRT contre 3.17 ms pour le Design 1 sous Coyote. La différence vient principalement de l'élimination des copies DDR. Une fois le Design 2 introduit, l'écart se creuse nettement : 0.83 ms sous Coyote, soit environ ×5 par rapport à XRT.
 
-#pagebreak()
 == Tableau comparatif et bilan
 
 Le tableau @tab-perf-comparison récapitule les configurations testées et leur point de comparaison XRT.
