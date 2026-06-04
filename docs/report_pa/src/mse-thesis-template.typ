@@ -10,7 +10,7 @@
   body,
   state: "V1.0",
   file-name: "report.typ",
-  project-type: "Rapport de Projet d'approfondissement",
+  project-type: "Projet d'approfondissement",
   accent-color: rgb(40, 94, 151),
   acknowledgments: [#lorem(50)],
   en-resume: [#lorem(50)],

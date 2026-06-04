@@ -1,7 +1,7 @@
 #import "mse-thesis-template.typ": appendix, report-template
 
 #show: report-template.with(
-  title: "Portage du Bytestream Decoder sur Coyote",
+  title: "Traitement de données en ligne sur FPGA avec Coyote",
   author: "Abivarman Kandiah",
   orientation: "Computer Science",
   teacher: "Andres Upegui, Quentin Berthet",
@@ -23,23 +23,19 @@
   ],
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
 #heading(numbering: none, level: 1)[Liste des figures]
-// ─────────────────────────────────────────────────────────────────────────────
 
 #outline(title: none, target: figure.where(kind: image))
 
 #pagebreak()
-// ─────────────────────────────────────────────────────────────────────────────
 #heading(numbering: none, level: 1)[Liste des abréviations]
-// ─────────────────────────────────────────────────────────────────────────────
 
 #table(
   columns: (auto, 1fr),
   inset: 6pt,
   stroke: none,
   align: (left, left),
-  [*AMD*],    [Advanced Micro Devices],
+  [*AMD*],    [Advanced Micro Devices - Fabricant des cartes utilisées],
   [*API*],    [Application Programming Interface],
   [*AXI*],    [Advanced eXtensible Interface — protocole de bus AMBA],
   [*BIOS*],   [Basic Input/Output System],
@@ -68,9 +64,7 @@
 )
 
 #pagebreak()
-// ─────────────────────────────────────────────────────────────────────────────
 = Introduction
-// ─────────────────────────────────────────────────────────────────────────────
 
 Pour faire communiquer un FPGA avec un hôte via PCIe, il faut mettre en place toute une infrastructure côté FPGA : contrôleur PCIe, DMA, gestion mémoire, chargement de la logique applicative. C'est un travail long et fastidieux, qui mobilise du temps de design sans rapport direct avec l'application visée.
 
@@ -88,9 +82,7 @@ Trois objectifs ont été fixés pour ce projet :
 Le rapport est organisé comme suit. Le chapitre _Contexte technique_ pose les bases : FPGA, frameworks XRT et Coyote, et présentation du Bytestream Decoder. Le chapitre _Prise en main et évaluation de Coyote_ documente la mise en route du framework sur les deux cartes et les difficultés rencontrées. Le chapitre _Portage du Bytestream Decoder sur Coyote_ détaille l'adaptation du wrapper hardware, la réécriture du code hôte, et l'introduction d'une variante Design 2 à sortie 128 bits. Le chapitre _Analyse des performances et optimisation_ présente la méthodologie de mesure via ILA, le diagnostic du goulot, la montée en fréquence à 400 MHz et la comparaison directe avec l'implémentation XRT d'origine. Le rapport se termine par une synthèse et l'évocation des prolongements possibles.
 
 #pagebreak()
-// ─────────────────────────────────────────────────────────────────────────────
 = Contexte technique
-// ─────────────────────────────────────────────────────────────────────────────
 
 == Accélération matérielle par FPGA pour le traitement de flux
 
@@ -191,9 +183,7 @@ Cette largeur de 32 bits, héritée de l'implémentation XRT d'origine, va jouer
 
 
 #pagebreak()
-// ─────────────────────────────────────────────────────────────────────────────
 = Prise en main de Coyote
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Ce chapitre est indépendant du Bytestream Decoder : il documente l'expérience
 // de mise en route de Coyote en tant que framework, avant tout portage applicatif.
@@ -251,9 +241,7 @@ Une fois ce problème réglé, la V80 fonctionne de manière stable et reproduct
 C'est cette carte qui a servi de plateforme pour toutes les mesures de performance présentées plus loin.
 
 #pagebreak()
-// ─────────────────────────────────────────────────────────────────────────────
 = Portage du Bytestream Decoder sur Coyote
-// ─────────────────────────────────────────────────────────────────────────────
 
 Le portage du Bytestream Decoder de XRT vers Coyote consiste à refaire le wrapper au format attendu par Coyote, et réécrire le code hôte autour de l'API Coyote.
 Le coeur VHDL du décodeur, lui, reste identique à la version XRT d'origine.
@@ -275,6 +263,7 @@ Concrètement :
 
 Le wrapper instancie aussi une ILA décrit via le script `init_ip.tcl`, avec des sondes sur les signaux axi-stream des interfaces d'entrée et de sortie. Cela va permettre de mesurer les duty cycles côté FPGA et d'identifier les goulots dans l'analyse de performance présentée plus loin.
 
+#pagebreak()
 == Adaptation du code hôte
 
 Le code hôte a été entièrement réécrit autour de l'API Coyote, à la place du modèle `xclbin` + buffers de XRT.
@@ -310,9 +299,7 @@ Côté hôte, l'unpacking est ajusté pour lire une cellule complète par bloc, 
 Le reste de la chaîne reste strictement identique au Design 1.
 
 #pagebreak()
-// ─────────────────────────────────────────────────────────────────────────────
 = Analyse des performances et optimisation
-// ─────────────────────────────────────────────────────────────────────────────
 
 == Méthodologie de mesure (ILA)
 
@@ -383,6 +370,7 @@ D'autre part, le modèle de transfert n'est pas le même. Sous XRT, les données
 
 À design équivalent (sortie 32 bits, fréquence comparable), le temps total bout-en-bout est dans le même ordre de grandeur : 4.12 ms sous XRT contre 3.17 ms pour le Design 1 sous Coyote. La différence vient principalement de l'élimination des copies DDR. Une fois le Design 2 introduit, l'écart se creuse nettement : 0.83 ms sous Coyote, soit environ ×5 par rapport à XRT.
 
+#pagebreak()
 == Tableau comparatif et bilan
 
 Le tableau @tab-perf-comparison récapitule les configurations testées et leur point de comparaison XRT.
@@ -410,10 +398,8 @@ Ensuite, l'optimisation décisive vient de l'alignement entre la largeur de sort
 
 La prochaine optimisation naturelle serait d'élargir aussi le bus d'entrée, qui n'utilise actuellement qu'un mot 32 bits sur 512 disponibles par bloc.
 
-
-// ─────────────────────────────────────────────────────────────────────────────
+#pagebreak()
 = Conclusion
-// ─────────────────────────────────────────────────────────────────────────────
 
 L'objectif principal de ce projet était d'évaluer Coyote comme alternative à XRT, sur un cas d'usage concret, et de valider son support sur la V80 récemment ajouté. Sur les trois axes annoncés en introduction, le bilan est globalement positif.
 
@@ -430,9 +416,7 @@ Plusieurs *pistes* d'amélioration ressortent enfin des mesures. La plus directe
 Une piste plus ambitieuse, et plus en phase avec l'esprit de Coyote, serait d'exploiter le scénario *smartNIC*. Actuellement, le Bytestream Decoder et l'ensemble du pipeline qui le suit tournent sur GPU, et les données détecteur transitent par une carte réseau classique avant d'être copiées vers le GPU. Un FPGA Coyote installé en lieu et place de la carte réseau pourrait ingérer directement le flux du détecteur, exécuter le Bytestream Decoder à la volée, et transférer ensuite le `CaloCell container` directement dans la mémoire du GPU, sans repasser par le CPU hôte. Ce type de déploiement correspond exactement aux cas d'usage dataplane visés par Coyote.
 
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Bibliographie & Annexes
-// ─────────────────────────────────────────────────────────────────────────────
 
 #pagebreak()
 #bibliography(full: true, "bibliography.bib", style: "ieee")
