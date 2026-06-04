@@ -24,6 +24,13 @@
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
+#heading(numbering: none, level: 1)[Liste des figures]
+// ─────────────────────────────────────────────────────────────────────────────
+
+#outline(title: none, target: figure.where(kind: image))
+
+#pagebreak()
+// ─────────────────────────────────────────────────────────────────────────────
 #heading(numbering: none, level: 1)[Liste des abréviations]
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -145,7 +152,7 @@ Plusieurs vFPGAs peuvent coexister dans le même shell, ce qui permet d'isoler p
 
 #figure(
   image("imgs/cyt_ov_light.png", width: 80%),
-  caption: [Architecture d'un shell Coyote avec un vFPGA. Source: https://github.com/fpgasystems/Coyote/tree/master],
+  caption: [Architecture d'un shell Coyote avec un vFPGA. Source : @coyote-repo.],
 ) <fig-coyote-overview>
 
 Le top-level du vFPGA s'écrit en SystemVerilog, mais la logique applicative en dessous peut être décrite en VHDL, Verilog, SystemVerilog, HLS, ou encore SpinalHDL.
@@ -154,7 +161,7 @@ Coyote propose également plusieurs modes de transfert de données entre l'hôte
 
 #figure(
   image("imgs/coyote_oper_overview.png", width: 80%),
-  caption: [Schéma des différents modes de transfert de données entre l'hôte et le FPGA proposés par Coyote. Source: https://github.com/fpgasystems/Coyote/tree/master],
+  caption: [Schéma des différents modes de transfert de données entre l'hôte et le FPGA proposés par Coyote. Source : @coyote-repo.],
 ) <fig-coyote-data-paths>
 
 Le mode de transfert qui va nous intéresser en particulier c'est le mode "Local Read/Write/Transfer" qui va permettre de streamer les données directement entre la mémoire de l'hôte et le vFGPA, sans passer par une mémoire intermédiaire sur la carte.
@@ -171,7 +178,10 @@ Le décodeur va lire ce flux et reconstruire à la volée une structure exploita
 
 Cette implémentation est intéressante car le décodeur existe déjà sous la forme d'un design VHDL validé sous XRT sur des cartes Alveo @upegui-bsd, ce qui va nous donner un point de comparaison direct avec Coyote.
 
-// Image reprise des slides Upegui : architecture du pipeline (FEB Parser → décodeurs Gain/Energy/Time/Quality + ID LUT → FIFO + Packet Merge)
+#figure(
+  image("imgs/bytestream_decoder_arch.png", width: 95%),
+  caption: [Vue d'ensemble du pipeline de décodage du Bytestream Decoder.],
+) <fig-bsd-pipeline>
 
 Le pipeline prend en entrée deux flux : le ByteStream brut (~700 KB) et des données de correction (~7 KB).
 
