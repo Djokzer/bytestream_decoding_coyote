@@ -8,14 +8,14 @@
   company: "",
   confidential: false,
   fr-resume: [
-    Ce projet évalue *Coyote*, un framework open source développé à l'ETH Zürich pour faire communiquer un FPGA avec son hôte via PCIe, comme alternative à XRT, l'outil officiel d'AMD/Xilinx. L'évaluation se fait sur un cas concret : le portage du *Bytestream Decoder*, un algorithme issu de l'expérience ATLAS au CERN dont une implémentation FPGA en VHDL existait déjà sous XRT.
+    Ce projet évalue Coyote, un framework open source développé à l'ETH Zürich pour faire communiquer un FPGA avec son hôte via PCIe, comme alternative à XRT, l'outil officiel d'AMD/Xilinx. L'évaluation se fait sur un cas concret : le portage du Bytestream Decoder, un algorithme issu de l'expérience ATLAS au CERN dont une implémentation FPGA en VHDL existait déjà sous XRT.
 
     Le framework a été validé sur deux cartes. L'Alveo U55C est restée instable pour des raisons qui n'ont pas pu être identifiées dans le temps imparti. La Versal V80, en revanche, fonctionne de manière stable et reproductible une fois un fix MSI-X appliqué dans les bootargs du noyau. La V80 n'étant pas supportée par XRT, Coyote est par ailleurs la seule option viable sur cette carte.
 
     Le portage proprement dit n'a pas demandé de modifier le cœur VHDL du décodeur, seuls le wrapper SystemVerilog et le code hôte autour de l'API Coyote ont été refaits. Une variante Design 2, élargissant la sortie de 32 à 128 bits, a apporté un gain d'un facteur ×3.8 sur le temps de transfert. À design équivalent, Coyote est déjà légèrement plus rapide que XRT grâce au streaming direct entre la mémoire hôte et le FPGA, sans copies par la mémoire HBM/DDR de la carte.
   ],
   en-resume: [
-    This project evaluates *Coyote*, an open-source framework developed at ETH Zürich for FPGA-to-host communication over PCIe, as an alternative to XRT, AMD/Xilinx's official tool. The evaluation is built around a concrete use case: porting the *Bytestream Decoder*, an algorithm from the ATLAS experiment at CERN whose FPGA implementation in VHDL already existed under XRT.
+    This project evaluates Coyote, an open-source framework developed at ETH Zürich for FPGA-to-host communication over PCIe, as an alternative to XRT, AMD/Xilinx's official tool. The evaluation is built around a concrete use case: porting the Bytestream Decoder, an algorithm from the ATLAS experiment at CERN whose FPGA implementation in VHDL already existed under XRT.
 
     The framework was validated on two boards. The Alveo U55C remained unstable for reasons that could not be identified within the project's timeframe. The Versal V80, by contrast, operates reliably under Coyote once a MSI-X fix is applied in the kernel boot arguments. The V80 is not supported by XRT, which makes Coyote the only viable option on that board.
 
@@ -70,9 +70,9 @@ Pour faire communiquer un FPGA avec un hôte via PCIe, il faut mettre en place t
 
 Des frameworks comme XRT ou Coyote viennent justement résoudre ce problème. Ils fournissent une couche d'abstraction prête à l'emploi qui gère ces aspects génériques, et laissent l'utilisateur se concentrer directement sur la logique applicative. C'est particulièrement intéressant pour du prototypage rapide, où l'on veut pouvoir itérer ou changer de logique sans toucher à l'infrastructure.
 
-Dans l'écosystème AMD/Xilinx, ce rôle est historiquement tenu par *XRT*, l'outil officiel d'AMD. Mais un nouveau framework, *Coyote*, est apparu plus récemment et propose des possibilités qui pourraient à terme rendre XRT obsolète.
+Dans l'écosystème AMD/Xilinx, ce rôle est historiquement tenu par XRT, l'outil officiel d'AMD. Mais un nouveau framework, Coyote, est apparu plus récemment et propose des possibilités qui pourraient à terme rendre XRT obsolète.
 
-Pour évaluer concrètement Coyote, il faut un cas d'usage représentatif. Le *Bytestream Decoder*, un algorithme utilisé dans la chaîne de lecture du calorimètre LAr de l'expérience ATLAS au CERN, remplit ce critère. Mr.Upegui en a implémenté une version FPGA en VHDL, déjà validée sous XRT sur cartes Alveo. Ce design existant offre donc un point de comparaison direct entre les deux frameworks.
+Pour évaluer concrètement Coyote, il faut un cas d'usage représentatif. Le Bytestream Decoder, un algorithme utilisé dans la chaîne de lecture du calorimètre LAr de l'expérience ATLAS au CERN, remplit ce critère. Mr.Upegui en a implémenté une version FPGA en VHDL, déjà validée sous XRT sur cartes Alveo. Ce design existant offre donc un point de comparaison direct entre les deux frameworks.
 
 Trois objectifs ont été fixés pour ce projet :
 + Prendre en main Coyote et valider son fonctionnement sur les deux cartes à disposition : l'Alveo U55C et la Versal V80.
@@ -162,11 +162,11 @@ Enfin, Coyote supporte depuis récemment la V80, ce qui en fait à ce jour l'une
 
 == Bytestream Decoder
 
-L'algorithme retenu pour tester Coyote sur un cas concret est le *Bytestream Decoder*, développé pour l'expérience ATLAS au CERN @atlas-lar.
-Il sert dans la chaîne de lecture du calorimètre à argon liquide (LAr), en tête du pipeline d'accélération du *Topo-automaton clustering*.
+L'algorithme retenu pour tester Coyote sur un cas concret est le Bytestream Decoder, développé pour l'expérience ATLAS au CERN @atlas-lar.
+Il sert dans la chaîne de lecture du calorimètre à argon liquide (LAr), en tête du pipeline d'accélération du Topo-automaton clustering.
 
 Le flux d'entrée contient, sous forme brute, les données mesurées pour chaque cellule du calorimètre : gain, énergie, temps et qualité.
-Le décodeur va lire ce flux et reconstruire à la volée une structure exploitable côté logiciel, appelée *CaloCell container*.
+Le décodeur va lire ce flux et reconstruire à la volée une structure exploitable côté logiciel, appelée CaloCell container.
 
 Cette implémentation est intéressante car le décodeur existe déjà sous la forme d'un design VHDL validé sous XRT sur des cartes Alveo @upegui-bsd, ce qui va nous donner un point de comparaison direct avec Coyote.
 
@@ -428,7 +428,7 @@ Une piste plus ambitieuse, et plus en phase avec l'esprit de Coyote, serait d'ex
 
 Le code complet du portage sous Coyote est disponible sur GitHub :
 
-#link("https://github.com/Djokzer/coyote_pa")[`https://github.com/Djokzer/coyote_pa`]
+#link("https://github.com/Djokzer/bytestream_decoding_coyote")[`https://github.com/Djokzer/bytestream_decoding_coyote`]
 
 Le design XRT d'origine du Bytestream Decoder, développé par Andres Upegui, est disponible sur le GitLab du CERN :
 
