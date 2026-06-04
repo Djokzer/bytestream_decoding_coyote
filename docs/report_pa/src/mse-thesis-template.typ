@@ -8,9 +8,9 @@
   confidential: false,
   company: "Company Name",
   body,
-  state: "To be finalized",
-  file-name: "structured-mse-thesis.typ",
-  project-type: "Travail de Master",
+  state: "V1.0",
+  file-name: "report.typ",
+  project-type: "Rapport de Projet d'approfondissement",
   accent-color: rgb(40, 94, 151),
   acknowledgments: [#lorem(50)],
   en-resume: [#lorem(50)],
@@ -236,9 +236,6 @@ provenant d’outils d’intelligence artificielle a été correctement mentionn
       ),
     )
 
-    #pagebreak()
-    = #tr("ack")
-    #acknowledgments
     #pagebreak()
     = Resume (English version)
     #en-resume

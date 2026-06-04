@@ -7,50 +7,78 @@
   teacher: "Andres Upegui, Quentin Berthet",
   company: "",
   confidential: false,
+  fr-resume: [
+    Ce projet évalue *Coyote*, un framework open source développé à l'ETH Zürich pour faire communiquer un FPGA avec son hôte via PCIe, comme alternative à XRT, l'outil officiel d'AMD/Xilinx. L'évaluation se fait sur un cas concret : le portage du *Bytestream Decoder*, un algorithme issu de l'expérience ATLAS au CERN dont une implémentation FPGA en VHDL existait déjà sous XRT.
+
+    Le framework a été validé sur deux cartes. L'Alveo U55C est restée instable pour des raisons qui n'ont pas pu être identifiées dans le temps imparti. La Versal V80, en revanche, fonctionne de manière stable et reproductible une fois un fix MSI-X appliqué dans les bootargs du noyau. La V80 n'étant pas supportée par XRT, Coyote est par ailleurs la seule option viable sur cette carte.
+
+    Le portage proprement dit n'a pas demandé de modifier le cœur VHDL du décodeur, seuls le wrapper SystemVerilog et le code hôte autour de l'API Coyote ont été refaits. Une variante Design 2, élargissant la sortie de 32 à 128 bits, a apporté un gain d'un facteur ×3.8 sur le temps de transfert. À design équivalent, Coyote est déjà légèrement plus rapide que XRT grâce au streaming direct entre la mémoire hôte et le FPGA, sans copies par la mémoire HBM/DDR de la carte.
+  ],
+  en-resume: [
+    This project evaluates *Coyote*, an open-source framework developed at ETH Zürich for FPGA-to-host communication over PCIe, as an alternative to XRT, AMD/Xilinx's official tool. The evaluation is built around a concrete use case: porting the *Bytestream Decoder*, an algorithm from the ATLAS experiment at CERN whose FPGA implementation in VHDL already existed under XRT.
+
+    The framework was validated on two boards. The Alveo U55C remained unstable for reasons that could not be identified within the project's timeframe. The Versal V80, by contrast, operates reliably under Coyote once a MSI-X fix is applied in the kernel boot arguments. The V80 is not supported by XRT, which makes Coyote the only viable option on that board.
+
+    The port itself required no changes to the decoder's VHDL core, only the SystemVerilog wrapper and the host code around the Coyote API had to be rewritten. A Design 2 variant, widening the output bus from 32 to 128 bits, delivered a ×3.8 speedup on transfer time. At an equivalent design, Coyote is already slightly faster than XRT thanks to the direct streaming between the host and the FPGA memory, which avoids the round-trip through the card's HBM/DDR memory.
+  ],
 )
 
-= Context (Résumé Temporaire)
+// ─────────────────────────────────────────────────────────────────────────────
+#heading(numbering: none, level: 1)[Liste des abréviations]
+// ─────────────────────────────────────────────────────────────────────────────
 
-L'idée du projet était la prise en main de Coyote, et le test de celui-ci avec des algorithmes déjà implémenté sous XRT.
-Si possible, aussi confirmer le fonctionemenet de celui-ci sur le FPGA V80 qui est nouvellement supporté par Coyote et que nous possedons mais qui était pas
-vraiment utilisable car ne supporte pas XRT.
+#table(
+  columns: (auto, 1fr),
+  inset: 6pt,
+  stroke: none,
+  align: (left, left),
+  [*AMD*],    [Advanced Micro Devices],
+  [*API*],    [Application Programming Interface],
+  [*AXI*],    [Advanced eXtensible Interface — protocole de bus AMBA],
+  [*BIOS*],   [Basic Input/Output System],
+  [*CPU*],    [Central Processing Unit — processeur],
+  [*DDR*],    [Double Data Rate — mémoire à double débit],
+  [*DMA*],    [Direct Memory Access — accès direct à la mémoire],
+  [*FEB*],    [Front-End Board — carte d'acquisition du détecteur ATLAS],
+  [*FIFO*],   [First In, First Out — file d'attente à ordre conservé],
+  [*FPGA*],   [Field-Programmable Gate Array — circuit logique reprogrammable],
+  [*GPU*],    [Graphics Processing Unit — processeur graphique],
+  [*GRUB*],   [GRand Unified Bootloader — chargeur de démarrage Linux],
+  [*HBM*],    [High Bandwidth Memory — mémoire à large bande passante],
+  [*HLS*],    [High-Level Synthesis — synthèse matérielle à partir d'un langage de haut niveau],
+  [*ILA*],    [Integrated Logic Analyzer — analyseur logique intégré (IP Xilinx)],
+  [*IOMMU*],  [Input-Output Memory Management Unit],
+  [*IP*],     [Intellectual Property block — brique réutilisable de design FPGA],
+  [*LAr*],    [Liquid Argon — calorimètre à argon liquide d'ATLAS],
+  [*LUT*],    [Look-Up Table — table de correspondance],
+  [*MSI-X*],  [Message Signaled Interrupts eXtended — mécanisme d'interruptions PCIe],
+  [*NoC*],    [Network-on-Chip — réseau sur puce],
+  [*PCI*],    [Peripheral Component Interconnect],
+  [*PCIe*],   [PCI Express],
+  [*vFPGA*],  [virtual FPGA — instance applicative dans le shell Coyote],
+  [*VHDL*],   [VHSIC Hardware Description Language],
+  [*XRT*],    [Xilinx Runtime — framework officiel d'AMD/Xilinx],
+)
 
-J'ai commencé par faire fonctionné Coyote avec le premier design d'exemple sur la U55C.
-Durant celui-ci j'ai pu rencontré certains problèmes. certains ont été fixés, d'autres je pensais l'avoir fix mais en fait au final il n'est toujours pas stable.
-En effet, le design se programme bien et le driver semble bien se charger, mais lors de l'execution de l'host, le programme bloque car n'arrive pas à executer le transfert avec le FPGA.
-
-En parralèle, j'ai pu prendre en main en testant le programme qui a été fait par Upegui, qui est le bytestream decoder sous XRT qui est un projet dans le cadre du projet ATLAS.
-Après avoir testé le bon fonctionemenet de celui-ci, j'ai pu commencé à porter le design et le code hote pour une utilisation sous coyote.
-
-Entre temps, la V80 était officiellement supporté, donc j'ai pu aussi commencé à tester le design d'exemple sous la V80.
-Avec la V80, j'avais rencontré un problème principal, ou je n'arrivais pas à charger correctement le driver.
-J'avais un soucis de manque de mémoire pour MSI-X. J'ai pu réglé le problème en ajoutant dans les bootargs, le ``pci=realloc``.
-
-Au final, la V80 marche assez bien sous coyote, j'arrive à reproduire correctement à chaque fois contrairement à la U55C.
-
-Le travail du portage coté design est la réecriture du Wrapper, et le fait que coyote a un bus AXI-S de 512 bits, tandis que le design utilise des 32 bits.
-
-
+#pagebreak()
 // ─────────────────────────────────────────────────────────────────────────────
 = Introduction
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Contextualiser la problématique centrale : le besoin de frameworks hôte-FPGA
-// flexibles et portables, capable de s'adapter à des cartes modernes (V80) là où
-// XRT reste limité.
-// Présenter Coyote comme alternative prometteuse (shell/role, PCIe natif,
-// hugepages, AXI-Stream 512 bits) et l'intérêt de l'évaluer sur un vrai algo.
-// Motiver le choix du Bytestream Decoder comme algorithme de référence :
-//   - design VHDL existant, déjà validé sous XRT (Upegui)
-//   - pipeline de traitement de flux réel avec contraintes de débit
-//   - représentatif des cas d'usage dataplane (smartNIC, DAQ temps réel)
-// Énoncer les trois objectifs du projet :
-//   1. Prendre en main Coyote et le valider sur les cartes disponibles (U55C, V80)
-//   2. Porter le Bytestream Decoder de XRT vers Coyote, en évaluer les écarts
-//   3. Identifier les forces, limites et perspectives de Coyote sur ce type
-//      d'application (accélération PCIe, smartNIC)
-// Terminer par le plan du rapport (une phrase par chapitre).
-#lorem(80)
+Pour faire communiquer un FPGA avec un hôte via PCIe, il faut mettre en place toute une infrastructure côté FPGA : contrôleur PCIe, DMA, gestion mémoire, chargement de la logique applicative. C'est un travail long et fastidieux, qui mobilise du temps de design sans rapport direct avec l'application visée.
+
+Des frameworks comme XRT ou Coyote viennent justement résoudre ce problème. Ils fournissent une couche d'abstraction prête à l'emploi qui gère ces aspects génériques, et laissent l'utilisateur se concentrer directement sur la logique applicative. C'est particulièrement intéressant pour du prototypage rapide, où l'on veut pouvoir itérer ou changer de logique sans toucher à l'infrastructure.
+
+Dans l'écosystème AMD/Xilinx, ce rôle est historiquement tenu par *XRT*, l'outil officiel d'AMD. Mais un nouveau framework, *Coyote*, est apparu plus récemment et propose des possibilités qui pourraient à terme rendre XRT obsolète.
+
+Pour évaluer concrètement Coyote, il faut un cas d'usage représentatif. Le *Bytestream Decoder*, un algorithme utilisé dans la chaîne de lecture du calorimètre LAr de l'expérience ATLAS au CERN, remplit ce critère. Mr.Upegui en a implémenté une version FPGA en VHDL, déjà validée sous XRT sur cartes Alveo. Ce design existant offre donc un point de comparaison direct entre les deux frameworks.
+
+Trois objectifs ont été fixés pour ce projet :
++ Prendre en main Coyote et valider son fonctionnement sur les deux cartes à disposition : l'Alveo U55C et la Versal V80.
++ Porter le Bytestream Decoder de XRT vers Coyote, en évaluant l'effort nécessaire et les écarts de performance.
++ Identifier les forces, les limites et les perspectives de Coyote sur ce type d'algorithme.
+
+Le rapport est organisé comme suit. Le chapitre _Contexte technique_ pose les bases : FPGA, frameworks XRT et Coyote, et présentation du Bytestream Decoder. Le chapitre _Prise en main et évaluation de Coyote_ documente la mise en route du framework sur les deux cartes et les difficultés rencontrées. Le chapitre _Portage du Bytestream Decoder sur Coyote_ détaille l'adaptation du wrapper hardware, la réécriture du code hôte, et l'introduction d'une variante Design 2 à sortie 128 bits. Le chapitre _Analyse des performances et optimisation_ présente la méthodologie de mesure via ILA, le diagnostic du goulot, la montée en fréquence à 400 MHz et la comparaison directe avec l'implémentation XRT d'origine. Le rapport se termine par une synthèse et l'évocation des prolongements possibles.
 
 #pagebreak()
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,21 +130,32 @@ Ces frameworks fournissent également une API pour l'hôte, permettant de facili
 La programmation de la couche logique applicative repose sur des kernels généralement décrits en HLS.
 La transition des données entre l'hôte et le FPGA suit un schéma comme celui-ci :
 
-// Image montrant RAM Hote -> DDR/HBM FPGA -> Application logique -> DDR/HBM FPGA -> RAM Hote
+#figure(
+  image("imgs/xrt_oper.png", width: 80%),
+  caption: [Schéma du chemin de données entre l'hôte et le FPGA sous XRT.],
+) <fig-xrt-data-path>
 
 XRT bénéficie d'un écosystème mature, intégré à la toolchain Vitis, mais malheureusement ne supporte pas les cartes plus récentes comme la V80.
 
 === Coyote
 
 *Coyote* est un framework open source développé à l'ETH Zürich @coyote.
-La logique applicative y prend la forme d'un ou plusieurs *vFPGAs* (_virtual FPGAs_), qui dialoguent avec le shell via des interfaces AXI-Stream de 512 bits.
+La logique applicative y prend la forme d'un ou plusieurs *vFPGAs* (_virtual FPGAs_), qui dialoguent avec le shell via des interfaces AXI-Stream.
 Plusieurs vFPGAs peuvent coexister dans le même shell, ce qui permet d'isoler plusieurs applications sur le même FPGA.
+
+#figure(
+  image("imgs/cyt_ov_light.png", width: 80%),
+  caption: [Architecture d'un shell Coyote avec un vFPGA. Source: https://github.com/fpgasystems/Coyote/tree/master],
+) <fig-coyote-overview>
 
 Le top-level du vFPGA s'écrit en SystemVerilog, mais la logique applicative en dessous peut être décrite en VHDL, Verilog, SystemVerilog, HLS, ou encore SpinalHDL.
 
 Coyote propose également plusieurs modes de transfert de données entre l'hôte et le FPGA, comme illustré sur le schéma suivant :
 
-// Image reprise de la doc Coyote montrant les différents modes de transfert hôte ↔ FPGA (host memory, card memory, RDMA, etc.)
+#figure(
+  image("imgs/coyote_oper_overview.png", width: 80%),
+  caption: [Schéma des différents modes de transfert de données entre l'hôte et le FPGA proposés par Coyote. Source: https://github.com/fpgasystems/Coyote/tree/master],
+) <fig-coyote-data-paths>
 
 Le mode de transfert qui va nous intéresser en particulier c'est le mode "Local Read/Write/Transfer" qui va permettre de streamer les données directement entre la mémoire de l'hôte et le vFGPA, sans passer par une mémoire intermédiaire sur la carte.
 Enfin, Coyote supporte depuis récemment la V80, ce qui en fait à ce jour l'une des rares options viables pour exploiter cette carte.
@@ -143,7 +182,7 @@ Cette largeur de 32 bits, héritée de l'implémentation XRT d'origine, va jouer
 
 #pagebreak()
 // ─────────────────────────────────────────────────────────────────────────────
-= Prise en main et évaluation de Coyote
+= Prise en main de Coyote
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Ce chapitre est indépendant du Bytestream Decoder : il documente l'expérience
@@ -208,6 +247,11 @@ C'est cette carte qui a servi de plateforme pour toutes les mesures de performan
 
 Le portage du Bytestream Decoder de XRT vers Coyote consiste à refaire le wrapper au format attendu par Coyote, et réécrire le code hôte autour de l'API Coyote.
 Le coeur VHDL du décodeur, lui, reste identique à la version XRT d'origine.
+
+#figure(
+  image("imgs/coyote_general_arch.png", width: 95%),
+  caption: [Vue d'ensemble du portage : chargement des fichiers et packing côté hôte, transfert via Coyote, décodage dans le vFPGA, puis retour vers l'hôte.],
+) <fig-coyote-pipeline>
 
 == Adaptation du wrapper hardware (Design 1)
 
