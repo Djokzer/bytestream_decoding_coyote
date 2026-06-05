@@ -1,5 +1,5 @@
 SRC := src/report.typ
-OUT := thesis_pa.pdf
+OUT := KandiahAbivarman_rapport_MSE_PA_SP26.pdf
 
 .PHONY: all build watch clean
 

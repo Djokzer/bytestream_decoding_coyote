@@ -202,7 +202,7 @@ Un cycle de déploiement complet ressemble donc à ça :
 + chargement du driver Coyote
 + exécution du programme hôte
 
-Pour valider la chaîne, j'ai commencé par l'exemple `01_hello_world` fourni avec Coyote, qui réalise un simple transfert hôte ↔ FPGA. C'est sur cet exemple que la majorité des problèmes de mise en route ont été rencontrés.
+Pour valider la chaîne, j'ai commencé par l'exemple `01_hello_world` fourni avec Coyote, qui réalise un simple transfert entre hôte et FPGA. C'est sur cet exemple que la majorité des problèmes de mise en route ont été rencontrés.
 
 == Tests sur U55C — difficultés rencontrées
 
@@ -418,7 +418,7 @@ Le tableau @tab-perf-comparison récapitule les configurations testées et leur 
 
 Trois conclusions ressortent de cette analyse.
 
-D'abord, à design équivalent (sortie 32 bits), Coyote est déjà légèrement plus rapide que XRT bout-en-bout, principalement grâce au streaming direct mémoire hôte ↔ vFPGA qui évite les copies DDR.
+D'abord, à design équivalent (sortie 32 bits), Coyote est déjà légèrement plus rapide que XRT bout-en-bout, principalement grâce au streaming direct entre mémoire hôte et vFPGA qui évite les copies DDR.
 
 Ensuite, l'optimisation décisive vient de l'alignement entre la largeur de sortie du pipeline et celle du bus Coyote, pas de la fréquence. Passer de l'`Output_Merger_32` à l'`Output_Merger_128` apporte un facteur ×3.8 sur le temps de transfert, alors que doubler la fréquence n'apporte qu'environ 1 % supplémentaire.
 
@@ -427,19 +427,21 @@ La prochaine optimisation naturelle serait d'élargir aussi le bus d'entrée, qu
 #pagebreak()
 = Conclusion
 
-L'objectif principal de ce projet était d'évaluer Coyote comme alternative à XRT, sur un cas d'usage concret, et de valider son support sur la V80 récemment ajouté. Sur les trois axes annoncés en introduction, le bilan est globalement positif.
+Ce projet s'inscrit dans une réflexion plus large sur le rôle des FPGAs comme nœuds de calcul intelligents, capables de recevoir un flux de données, de le transformer à haute vitesse, et de le restituer sans passer par le CPU. Dans le contexte d'ATLAS, le _bytestream decoding_ tourne aujourd'hui sur CPU, et les futures montées en débit du détecteur rendent pertinente l'étude d'une migration vers le FPGA. Ce travail constitue une première étape concrète dans cette direction, en mettant en place une chaîne de traitement reposant sur Coyote autour d'une version VHDL existante du Bytestream Decoder.
 
-D'abord, la *prise en main de Coyote* a été menée sur les deux cartes à disposition. La V80 fonctionne de manière stable et reproductible une fois le fix `pci=realloc=on` appliqué dans les bootargs GRUB, ce qui constitue une première validation pratique du support récent de cette carte par le framework. La U55C, en revanche, est restée instable : le bitstream se programme, le driver se charge, mais le `tvalid` de l'AXI-Stream d'entrée ne démarre jamais dans certains cas, sans cause identifiée dans le temps imparti.
+Sur les trois axes annoncés en introduction, le bilan est globalement positif.
+
+D'abord, la *prise en main de Coyote* a été menée sur les deux cartes à disposition. La V80 fonctionne de manière stable et reproductible une fois le fix `pci=realloc=on` appliqué dans les bootargs GRUB, ce qui constitue une première validation pratique du support récent de cette carte par le framework. La U55C, en revanche, est restée instable : le bitstream se programme, le driver se charge, mais le programme hôte se retrouve bloqué durant le transfert mémoire.
 
 Ensuite, le *portage du Bytestream Decoder* a abouti sans toucher au cœur VHDL du décodeur. L'essentiel du travail d'adaptation tient dans le wrapper SystemVerilog et dans la réécriture du code hôte autour de l'API Coyote. Une variante Design 2 a aussi été produite en élargissant la sortie de 32 à 128 bits, via le merger déjà présent dans le code VHDL d'origine. Cette modification, minime côté hardware, a apporté un facteur ×3.8 sur le temps de transfert.
 
-Enfin, la *comparaison avec XRT* montre que Coyote est viable à design équivalent, et bénéficie en plus du streaming direct mémoire hôte ↔ vFPGA, qui évite les copies DDR imposées par XRT. Sur la V80 en particulier, c'est aujourd'hui l'une des seules options exploitables, vu que XRT ne supporte pas cette carte.
+Enfin, la *comparaison avec XRT* montre que Coyote est viable à design équivalent, et bénéficie en plus du streaming direct entre la mémoire hôte et le vFPGA, qui évite les copies DDR imposées par XRT. Sur la V80 en particulier, c'est aujourd'hui l'une des seules options exploitables, vu que XRT ne supporte pas cette carte.
 
-Plusieurs *difficultés* sont à signaler. Le problème MSI-X au chargement du driver V80 a demandé un fix dans les bootargs GRUB, et la reprogrammation de la carte peut encore exiger un redémarrage de la machine hôte pour que les ressources PCI soient réallouées proprement. Côté U55C, l'instabilité au démarrage des transferts reste sans explication satisfaisante : malgré plusieurs hypothèses testées (driver, IOMMU, rescan PCIe), le `tvalid` d'entrée ne démarre toujours pas dans certains cas, et la cause n'a pas pu être isolée dans le temps imparti.
+Plusieurs *difficultés* sont à signaler. Le problème MSI-X au chargement du driver V80 a demandé un fix dans les bootargs GRUB, et la reprogrammation de la carte peut encore exiger un redémarrage de la machine hôte pour que les ressources PCI soient réallouées proprement. Côté U55C, l'instabilité au démarrage des transferts reste sans explication satisfaisante : malgré plusieurs hypothèses testées (driver, IOMMU, rescan PCIe).
 
 Plusieurs *pistes* d'amélioration ressortent enfin des mesures. La plus directe serait d'élargir aussi le bus d'entrée : actuellement un seul mot de 32 bits sur 512 est utilisé par bloc, soit un ratio 1/16. Packer 16 mots par bloc devrait théoriquement multiplier d'autant le débit d'ingestion, à condition que le pipeline interne du décodeur puisse suivre. Au-delà, traiter plusieurs événements en parallèle dans un même shell Coyote, en exploitant le support multi-vFPGA, constituerait un prolongement naturel.
 
-Une piste plus ambitieuse, et plus en phase avec l'esprit de Coyote, serait d'exploiter le scénario *smartNIC*. Actuellement, le Bytestream Decoder et l'ensemble du pipeline qui le suit tournent sur GPU, et les données détecteur transitent par une carte réseau classique avant d'être copiées vers le GPU. Un FPGA Coyote installé en lieu et place de la carte réseau pourrait ingérer directement le flux du détecteur, exécuter le Bytestream Decoder à la volée, et transférer ensuite le `CaloCell container` directement dans la mémoire du GPU, sans repasser par le CPU hôte. Ce type de déploiement correspond exactement aux cas d'usage dataplane visés par Coyote.
+Une piste plus ambitieuse, et plus en phase avec l'esprit de Coyote, serait d'exploiter le scénario *smartNIC*. Aujourd'hui dans la chaîne ATLAS, les données détecteur arrivent par une carte réseau classique côté hôte, le CPU exécute le bytestream decoding, puis transfère les résultats vers le GPU qui prend en charge la suite du pipeline (Topo-automaton clustering, etc.). Un FPGA Coyote installé en lieu et place de la carte réseau pourrait ingérer directement le flux du détecteur, exécuter le Bytestream Decoder à la volée, et transférer ensuite le `CaloCell container` directement dans la mémoire du GPU, supprimant complètement l'étape CPU. Ce type de déploiement correspond exactement aux cas d'usage visés par Coyote.
 
 
 // Bibliographie & Annexes
