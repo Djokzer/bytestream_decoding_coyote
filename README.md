@@ -44,7 +44,7 @@ bytestream_decoding_coyote/
 
 - **Vivado 2024.2** — source the correct settings for the V80 before building:
   ```bash
-  source /tools/Xilinx/Vivado/2024.2/.settings64-Vivado.sh
+  source /tools/Xilinx/Vitis/2024.2/settings64.sh
   ```
 
 - Edit `env.sh` at the repo root to point to your local Coyote clone, then source it.
